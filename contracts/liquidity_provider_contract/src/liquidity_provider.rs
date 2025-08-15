@@ -186,10 +186,8 @@ impl LiquidityProviderContract {
         request.3 = String::from_str(&env, "accepted");
         env.storage().persistent().set(&request_id, &request);
 
-        // Note: USDC transfer is handled by Escrow Contract (lock_funds called earlier)
-        // Emit event for backend sync
         env.events().publish(
-            (symbol_short!("ReqAccept"), request_id, lp_node_id),
+            (symbol_short!("Accepted"), request_id, lp_node_id),
             request.2,
         );
     }
