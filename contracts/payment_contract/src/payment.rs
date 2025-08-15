@@ -70,11 +70,9 @@ impl PaymentModule {
             (amount, receiver),
         );
 
-        // Return transaction hash (simulated, as Soroban doesn't expose raw hash)
         payment_id
     }
 
-    // Query payment status
     pub fn get_payment_status(
         env: Env,
         payment_id: Bytes,
