@@ -1,9 +1,7 @@
-use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, Address, Bytes, Env, IntoVal, String,
-};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Bytes, Env, IntoVal, String};
 
 use crate::{
-    error::ContractError,
+    error::EscrowError,
     storage_types::{DataKey, EscrowData, EscrowStatus},
 };
 
@@ -67,13 +65,13 @@ impl EscrowContract {
         env: Env,
         request_id: Bytes,
         lp_node_id: Address,
-    ) -> Result<(), ContractError> {
+    ) -> Result<(), EscrowError> {
         lp_node_id.require_auth();
 
         let escrow: EscrowData = env.storage().persistent().get(&request_id).unwrap();
 
         if escrow.lp_node_id != lp_node_id || escrow.status != EscrowStatus::Locked {
-            return Err(ContractError::InvalidEscrowState);
+            return Err(EscrowError::InvalidEscrowState);
         }
 
         let wallet_contract: Address = env.storage().persistent().get(&DataKey::Wallet).unwrap();
@@ -105,21 +103,17 @@ impl EscrowContract {
         Ok(())
     }
 
-    pub fn refund_funds(
-        env: Env,
-        request_id: Bytes,
-        user_id: Address,
-    ) -> Result<(), ContractError> {
+    pub fn refund_funds(env: Env, request_id: Bytes, user_id: Address) -> Result<(), EscrowError> {
         user_id.require_auth();
 
         let escrow: EscrowData = env.storage().persistent().get(&request_id).unwrap();
 
         if escrow.user_id != user_id || escrow.status != EscrowStatus::Locked {
-            return Err(ContractError::InvalidEscrowState);
+            return Err(EscrowError::InvalidEscrowState);
         }
 
         if env.ledger().timestamp() < escrow.timeout {
-            return Err(ContractError::TimeoutNotReached);
+            return Err(EscrowError::TimeoutNotReached);
         }
 
         let wallet_contract: Address = env.storage().persistent().get(&DataKey::Wallet).unwrap();
