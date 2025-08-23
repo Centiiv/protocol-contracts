@@ -1,39 +1,10 @@
-use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, Address, Bytes, Env, String,
+use soroban_sdk::{contract, contractimpl, token, Address, Bytes, Env, String};
+
+use crate::{
+    error::PaymentContractError,
+    storage::{DataKey, Payment, PaymentStatus},
 };
 
-use crate::error::PaymentContractError;
-
-#[contracttype]
-pub struct Payment {
-    // UUID from off-chain
-    pub payment_id: Bytes,
-    // UUID from Invoice table
-    pub invoice_id: Bytes,
-    // Customer Stellar address
-    pub sender: Address,
-    // Merchant/aggregator Stellar address
-    pub receiver: Address,
-    // USDC amount (in smallest unit)
-    pub amount: i128,
-    // pending, completed, failed
-    pub status: PaymentStatus,
-    // Stellar transaction hash
-    pub stellar_tx_id: Bytes,
-}
-
-#[contracttype]
-#[derive(PartialEq, Clone, Debug)]
-pub enum PaymentStatus {
-    Completed,
-    Failed,
-}
-
-#[contracttype]
-#[derive(Clone, Debug)]
-pub enum DataKey {
-    Usdc,
-}
 #[contract]
 pub struct PaymentModule;
 
