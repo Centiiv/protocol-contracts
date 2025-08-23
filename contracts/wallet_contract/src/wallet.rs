@@ -1,68 +1,86 @@
-use soroban_sdk::{contract, contractimpl, symbol_short, token, Address, Bytes, Env};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Bytes, Env};
+
+use crate::error::WalletError;
 
 #[contract]
 pub struct WalletContract;
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub enum DataKey {
+    Usdc,
+    Central,
+}
+
+#[contracttype]
+#[derive(PartialEq, Clone, Debug)]
+pub enum EscrowStatus {
+    Locked,
+    Released,
+    Refunded,
+}
 
 #[contractimpl]
 impl WalletContract {
     pub fn initialize(env: Env, admin: Address, usdc_asset: Address, central_account: Address) {
         admin.require_auth();
+        env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
         env.storage()
             .persistent()
-            .set(&symbol_short!("usdc"), &usdc_asset);
-        env.storage()
-            .persistent()
-            .set(&symbol_short!("central"), &central_account);
+            .set(&DataKey::Central, &central_account);
     }
 
-    pub fn deposit(env: Env, user_id: Bytes, stellar_address: Address, amount: i128) {
+    pub fn deposit(
+        env: Env,
+        user_id: Bytes,
+        stellar_address: Address,
+        amount: i128,
+    ) -> Result<(), WalletError> {
         stellar_address.require_auth();
-        let usdc_asset: Address = env
-            .storage()
-            .persistent()
-            .get(&symbol_short!("usdc"))
-            .unwrap();
-        let central_account: Address = env
-            .storage()
-            .persistent()
-            .get(&symbol_short!("central"))
-            .unwrap();
+
+        let current_balance: i128 = Self::get_balance(&env, stellar_address.clone());
+
+        if amount > current_balance {
+            return Err(WalletError::InsufficientFunds);
+        }
+
+        let usdc_asset: Address = Self::get_usdc_address(&env);
+
+        let central_account: Address = Self::get_central_account(&env);
 
         // Transfer USDC to central account
         let token_client = token::Client::new(&env, &usdc_asset);
+
         token_client.transfer(&stellar_address, &central_account, &amount);
 
         // Update balance
-        let current_balance: i128 = env
-            .storage()
-            .persistent()
-            .get(&stellar_address)
-            .unwrap_or(0);
+        let current_balance: i128 = Self::get_balance(&env, stellar_address.clone());
+
         env.storage()
             .persistent()
             .set(&stellar_address, &(current_balance + amount));
 
         env.events()
-            .publish((symbol_short!("Deposit"), user_id, stellar_address), amount);
+            .publish((("Deposit confirmed"), user_id, stellar_address), amount);
+
+        Ok(())
     }
 
-    pub fn transfer(env: Env, from_address: Address, to_address: Address, amount: i128) {
+    pub fn transfer(
+        env: Env,
+        from_address: Address,
+        to_address: Address,
+        amount: i128,
+    ) -> Result<(), WalletError> {
         from_address.require_auth();
-        let usdc_asset: Address = env
-            .storage()
-            .persistent()
-            .get(&symbol_short!("usdc"))
-            .unwrap();
-        let central_account: Address = env
-            .storage()
-            .persistent()
-            .get(&symbol_short!("central"))
-            .unwrap();
+        let usdc_asset: Address = Self::get_usdc_address(&env);
+        let central_account: Address = Self::get_central_account(&env);
 
         // Validate balance
         let from_balance: i128 = env.storage().persistent().get(&from_address).unwrap_or(0);
+
         if from_balance < amount {
-            panic!("Insufficient balance");
+            return Err(WalletError::InsufficientFunds);
         }
 
         // Transfer USDC
@@ -73,21 +91,31 @@ impl WalletContract {
         env.storage()
             .persistent()
             .set(&from_address, &(from_balance - amount));
+
         let to_balance: i128 = env.storage().persistent().get(&to_address).unwrap_or(0);
+
         env.storage()
             .persistent()
             .set(&to_address, &(to_balance + amount));
 
-        env.events().publish(
-            (symbol_short!("Transfer"), from_address, to_address),
-            amount,
-        );
+        env.events()
+            .publish((("Transfer"), from_address, to_address), amount);
+
+        Ok(())
     }
 
-    pub fn get_balance(env: Env, stellar_address: Address) -> i128 {
+    pub fn get_balance(env: &Env, stellar_address: Address) -> i128 {
         env.storage()
             .persistent()
             .get(&stellar_address)
             .unwrap_or(0)
+    }
+
+    fn get_usdc_address(env: &Env) -> Address {
+        env.storage().persistent().get(&DataKey::Usdc).unwrap()
+    }
+
+    fn get_central_account(env: &Env) -> Address {
+        env.storage().persistent().get(&DataKey::Central).unwrap()
     }
 }
