@@ -1,24 +1,9 @@
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Address, Bytes, Env};
+use soroban_sdk::{contract, contractimpl, token, Address, Bytes, Env};
 
-use crate::error::WalletError;
+use crate::{error::WalletError, storage::DataKey};
 
 #[contract]
 pub struct WalletContract;
-
-#[contracttype]
-#[derive(Clone, Debug)]
-pub enum DataKey {
-    Usdc,
-    Central,
-}
-
-#[contracttype]
-#[derive(PartialEq, Clone, Debug)]
-pub enum EscrowStatus {
-    Locked,
-    Released,
-    Refunded,
-}
 
 #[contractimpl]
 impl WalletContract {
