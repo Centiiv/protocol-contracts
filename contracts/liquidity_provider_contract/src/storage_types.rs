@@ -26,6 +26,7 @@ pub struct LpNodeRequest {
     pub amount: i128,
     pub status: LpNodeDisbursalStatus,
 }
+
 #[contracttype]
 #[derive(Clone)]
 pub struct LpNode {

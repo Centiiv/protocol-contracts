@@ -1,24 +1,9 @@
-use soroban_sdk::{
-    contract, contractimpl, contracttype, symbol_short, token, Address, Bytes, Env, String,
-};
+use soroban_sdk::{contract, contractimpl, token, Address, Bytes, Env, String};
 
-#[contracttype]
-struct Payment {
-    // UUID from off-chain
-    payment_id: Bytes,
-    // UUID from Invoice table
-    invoice_id: Bytes,
-    // Customer Stellar address
-    sender: Address,
-    // Merchant/aggregator Stellar address
-    receiver: Address,
-    // USDC amount (in smallest unit)
-    amount: i64,
-    // pending, completed, failed
-    status: String,
-    // Stellar transaction hash
-    stellar_tx_id: Bytes,
-}
+use crate::{
+    error::PaymentContractError,
+    storage::{DataKey, Payment, PaymentStatus},
+};
 
 #[contract]
 pub struct PaymentModule;
@@ -28,9 +13,7 @@ impl PaymentModule {
     // Initialize contract with USDC asset
     pub fn initialize(env: Env, admin: Address, usdc_asset: Address) {
         admin.require_auth();
-        env.storage()
-            .persistent()
-            .set(&symbol_short!("usdc"), &usdc_asset);
+        env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
     }
 
     // Process a USDC payment
@@ -41,36 +24,43 @@ impl PaymentModule {
         sender: Address,
         receiver: Address,
         amount: i128,
-    ) -> Bytes {
-        // Verify sender's signature
+    ) -> Result<Bytes, PaymentContractError> {
         sender.require_auth();
-        let usdc_asset: Address = env
-            .storage()
-            .persistent()
-            .get(&symbol_short!("usdc"))
-            .unwrap();
 
-        // Transfer USDC using token client
+        if amount <= 0 {
+            return Err(PaymentContractError::AmountMustBePositive);
+        }
+
+        if env.storage().persistent().has(&payment_id) {
+            return Err(PaymentContractError::PaymentIDAlreadyExists);
+        }
+
+        let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+
         let token_client = token::Client::new(&env, &usdc_asset);
+
         token_client.transfer(&sender, &receiver, &amount);
 
-        // Record payment
-        let payment = (
-            invoice_id.clone(),
-            sender.clone(),
-            receiver.clone(),
+        let stellar_tx_id = Bytes::from_array(&env, &[0u8; 32]);
+
+        let payment = Payment {
+            payment_id: payment_id.clone(),
+            invoice_id: invoice_id.clone(),
+            sender,
+            receiver: receiver.clone(),
             amount,
-            String::from_str(&env, "completed"),
-        );
+            status: PaymentStatus::Completed,
+            stellar_tx_id,
+        };
+
         env.storage().persistent().set(&payment_id, &payment);
 
-        // Emit event
         env.events().publish(
-            (symbol_short!("Processed"), payment_id.clone(), invoice_id),
+            (("Payment Processed"), payment_id.clone(), invoice_id),
             (amount, receiver),
         );
 
-        payment_id
+        Ok(payment_id)
     }
 
     pub fn get_payment_status(
