@@ -2,4 +2,4 @@
 mod error;
 mod storage;
 mod test;
-mod wallet;
+pub mod wallet;
