@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, symbol_short, Address, Bytes, Env, IntoVal, String};
+use soroban_sdk::{contract, contractimpl, symbol_short, Address, Bytes, Env, IntoVal};
 
 use crate::{
     error::EscrowError,
@@ -10,7 +10,7 @@ pub struct EscrowContract;
 
 #[contractimpl]
 impl EscrowContract {
-    pub fn __initialize(env: Env, admin: Address, usdc_asset: Address, wallet_contract: Address) {
+    pub fn __constructor(env: Env, admin: Address, usdc_asset: Address, wallet_contract: Address) {
         admin.require_auth();
 
         env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
@@ -27,14 +27,17 @@ impl EscrowContract {
         lp_node_id: Address,
         amount: i128,
         timeout: u64,
-    ) {
+    ) -> Result<(), EscrowError> {
         user_id.require_auth();
+
+        if env.storage().persistent().has(&request_id) {
+            return Err(EscrowError::RequestIDAlreadyUsed);
+        }
 
         lp_node_id.require_auth();
 
         let wallet_contract: Address = env.storage().persistent().get(&DataKey::Wallet).unwrap();
 
-        // Transfer USDC to escrow
         env.invoke_contract::<()>(
             &wallet_contract,
             &symbol_short!("transfer"),
@@ -46,7 +49,6 @@ impl EscrowContract {
             ],
         );
 
-        // Record escrow
         let escrow = EscrowData {
             user_id: user_id.clone(),
             lp_node_id: lp_node_id.clone(),
@@ -59,6 +61,8 @@ impl EscrowContract {
 
         env.events()
             .publish((("Locked"), request_id, user_id, lp_node_id), amount);
+
+        Ok(())
     }
 
     pub fn release_funds(
@@ -68,7 +72,7 @@ impl EscrowContract {
     ) -> Result<(), EscrowError> {
         lp_node_id.require_auth();
 
-        let escrow: EscrowData = env.storage().persistent().get(&request_id).unwrap();
+        let mut escrow: EscrowData = env.storage().persistent().get(&request_id).unwrap();
 
         if escrow.lp_node_id != lp_node_id || escrow.status != EscrowStatus::Locked {
             return Err(EscrowError::InvalidEscrowState);
@@ -87,16 +91,10 @@ impl EscrowContract {
             ],
         );
 
-        env.storage().persistent().set(
-            &request_id,
-            &(
-                escrow.user_id,
-                escrow.lp_node_id,
-                escrow.amount,
-                EscrowStatus::Released,
-                escrow.timeout,
-            ),
-        );
+        escrow.status = EscrowStatus::Released;
+
+        env.storage().persistent().set(&request_id, &escrow);
+
         env.events()
             .publish((("Funds Released"), request_id, lp_node_id), escrow.amount);
 
@@ -146,10 +144,7 @@ impl EscrowContract {
         Ok(())
     }
 
-    pub fn get_escrow_status(
-        env: Env,
-        request_id: Bytes,
-    ) -> Option<(Address, Address, i128, String, u64)> {
+    pub fn get_escrow_status(env: Env, request_id: Bytes) -> Option<EscrowData> {
         env.storage().persistent().get(&request_id)
     }
 }

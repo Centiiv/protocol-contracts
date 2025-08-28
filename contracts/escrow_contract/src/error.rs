@@ -6,4 +6,5 @@ use soroban_sdk::contracterror;
 pub enum EscrowError {
     InvalidEscrowState = 1,
     TimeoutNotReached = 2,
+    RequestIDAlreadyUsed = 3,
 }
