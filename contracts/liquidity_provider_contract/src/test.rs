@@ -1,8 +1,11 @@
 #![cfg(test)]
 
-use crate::liquidity_provider::{LiquidityProviderContract, LiquidityProviderContractClient};
+use crate::{
+    liquidity_provider::{LiquidityProviderContract, LiquidityProviderContractClient},
+    storage_types::Algorithm,
+};
 
-use soroban_sdk::{testutils::Address as _, token, Address, Bytes, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Bytes, Env};
 
 use crate::storage_types::DataKey;
 
@@ -137,7 +140,7 @@ fn test_select_lp_node_with_wrr() {
         .try_create_disbursal_request(&req_id, &buyer, &500)
         .unwrap();
 
-    let algo: String = String::from_str(&env, "wrr");
+    let algo = Algorithm::Wrr;
 
     let chosen = lp_client.try_select_lp_node(&req_id, &algo, &None::<Bytes>);
 

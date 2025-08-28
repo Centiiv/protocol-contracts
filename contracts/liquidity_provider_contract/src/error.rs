@@ -12,4 +12,6 @@ pub enum ContractError {
     NoSuitableLPNode = 6,
     InvalidLPNode = 7,
     UnsupportedAlgorithm = 8,
+    RequestNotFound = 9,
+    InvalidRequest = 10,
 }

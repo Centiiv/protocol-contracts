@@ -2,7 +2,9 @@ use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, Bytes, Env, Map, 
 
 use crate::{
     error::ContractError,
-    storage_types::{DataKey, LpNode, LpNodeDisbursalStatus, LpNodeRequest, LpNodeStatus},
+    storage_types::{
+        Algorithm, DataKey, LpNode, LpNodeDisbursalStatus, LpNodeRequest, LpNodeStatus,
+    },
 };
 
 #[contract]
@@ -46,12 +48,12 @@ impl LiquidityProviderContract {
 
         env.storage().persistent().set(&lp_node_id, &lp_node);
 
-        // Track LP node IDs
         let mut node_ids: Map<Bytes, bool> = env
             .storage()
             .persistent()
             .get(&DataKey::NodeIDs)
             .unwrap_or(Map::new(&env));
+
         if node_ids.contains_key(lp_node_id.clone()) {
             return Err(ContractError::LpNodeIdAlreadyExists);
         }
@@ -95,86 +97,101 @@ impl LiquidityProviderContract {
     pub fn select_lp_node(
         env: Env,
         request_id: Bytes,
-        algorithm: String,
+        algorithm: Algorithm,
         offchain_node_id: Option<Bytes>,
     ) -> Result<Bytes, ContractError> {
-        let request: LpNodeRequest = env.storage().persistent().get(&request_id).unwrap();
+        let request: LpNodeRequest = env
+            .storage()
+            .persistent()
+            .get(&request_id)
+            .ok_or(ContractError::InvalidRequest)?;
 
         let amount = request.amount;
-
         let mut selected_node_id = Bytes::new(&env);
 
-        // Fetch active LP nodes
         let node_ids: Map<Bytes, bool> = env
             .storage()
             .persistent()
             .get(&DataKey::NodeIDs)
             .unwrap_or(Map::new(&env));
-        let mut nodes: Map<Bytes, (i128, i128, i128, i128, String)> = Map::new(&env);
+
+        let mut nodes: Map<Bytes, (i128, i128, i128, i128, LpNodeStatus)> = Map::new(&env);
+
         for (node_id, _) in node_ids.iter() {
             if let Some(node) = env
                 .storage()
                 .persistent()
-                .get::<_, (i128, i128, i128, i128, String)>(&node_id)
+                .get::<_, (i128, i128, i128, i128, LpNodeStatus)>(&node_id)
             {
-                if node.4 == String::from_str(&env, "active") && node.0 >= amount {
+                if node.4 == LpNodeStatus::Active && node.0 >= amount {
                     nodes.set(node_id, node);
                 }
             }
         }
 
-        if algorithm == String::from_str(&env, "wrr") {
-            let total_weight = nodes
-                .iter()
-                .map(|(_id, node)| node.0 * node.1 / 10000)
-                .sum::<i128>();
-            if total_weight == 0 {
-                return Err(ContractError::NoSuitableLPNode);
+        match algorithm {
+            Algorithm::Wrr => {
+                let total_weight = nodes
+                    .iter()
+                    .map(|(_id, node)| node.0 * node.1 / 10_000)
+                    .sum::<i128>();
+
+                if total_weight == 0 {
+                    return Err(ContractError::NoSuitableLPNode);
+                }
+
+                let current_index: i128 = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::LastIdx)
+                    .unwrap_or(0);
+
+                let mut weight_sum = 0;
+                for (node_id, node) in nodes.iter() {
+                    weight_sum += node.0 * node.1 / 10_000;
+                    if weight_sum > current_index % total_weight {
+                        selected_node_id = node_id.clone();
+                        break;
+                    }
+                }
+
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::LastIdx, &((current_index + 1) % total_weight));
             }
-            let current_index: i128 = env
-                .storage()
-                .persistent()
-                .get(&DataKey::LastIdx)
-                .unwrap_or(0);
-            let mut weight_sum = 0;
-            for (node_id, node) in nodes.iter() {
-                weight_sum += node.0 * node.1 / 10000;
-                if weight_sum > current_index % total_weight {
-                    selected_node_id = node_id;
-                    break;
+
+            Algorithm::Greedy => {
+                if let Some((id, _)) = nodes.iter().max_by(|(_, a), (_, b)| a.1.cmp(&b.1)) {
+                    selected_node_id = id.clone();
                 }
             }
-            env.storage()
-                .persistent()
-                .set(&DataKey::LastIdx, &((current_index + 1) % total_weight));
-        } else if algorithm == String::from_str(&env, "greedy") {
-            selected_node_id = nodes
-                .iter()
-                .max_by(|(_, a), (_, b)| a.1.cmp(&b.1))
-                .map(|(id, _)| id)
-                .unwrap_or(Bytes::new(&env));
-        } else if algorithm == String::from_str(&env, "scoring") {
-            let max_rate = nodes.iter().map(|(_, node)| node.1).max().unwrap_or(1);
-            let max_capacity = nodes.iter().map(|(_, node)| node.0).max().unwrap_or(1);
-            let mut max_score = 0_i128;
-            for (node_id, node) in nodes.iter() {
-                let score = (0.4 * (node.1 as f64 / max_rate as f64)
-                    + 0.3 * (node.0 as f64 / max_capacity as f64)
-                    + 0.2 * (node.2 as f64 / 10000.0)
-                    + 0.1 * (1000.0 / node.3 as f64))
-                    * 1000.0;
-                if score as i128 > max_score {
-                    max_score = score as i128;
-                    selected_node_id = node_id;
+
+            Algorithm::Scoring => {
+                let max_rate = nodes.iter().map(|(_, node)| node.1).max().unwrap_or(1);
+                let max_capacity = nodes.iter().map(|(_, node)| node.0).max().unwrap_or(1);
+                let mut max_score = 0_i128;
+
+                for (node_id, node) in nodes.iter() {
+                    let score = (0.4 * (node.1 as f64 / max_rate as f64)
+                        + 0.3 * (node.0 as f64 / max_capacity as f64)
+                        + 0.2 * (node.2 as f64 / 10_000.0)
+                        + 0.1 * (1000.0 / node.3 as f64))
+                        * 1000.0;
+
+                    if score as i128 > max_score {
+                        max_score = score as i128;
+                        selected_node_id = node_id.clone();
+                    }
                 }
             }
-        } else if algorithm == String::from_str(&env, "rl") {
-            selected_node_id = offchain_node_id.unwrap();
-            if !nodes.contains_key(selected_node_id.clone()) {
-                return Err(ContractError::InvalidLPNode);
+
+            Algorithm::Rl => {
+                let off_id = offchain_node_id.ok_or(ContractError::InvalidLPNode)?;
+                if !nodes.contains_key(off_id.clone()) {
+                    return Err(ContractError::InvalidLPNode);
+                }
+                selected_node_id = off_id;
             }
-        } else {
-            return Err(ContractError::UnsupportedAlgorithm);
         }
 
         if selected_node_id.is_empty() {
@@ -183,15 +200,16 @@ impl LiquidityProviderContract {
 
         env.storage().persistent().set(
             &request_id,
-            &(
-                request.user_id,
-                selected_node_id.clone(),
+            &LpNodeRequest {
+                user_id: request.user_id,
+                lp_node_id: selected_node_id.clone(),
                 amount,
-                LpNodeDisbursalStatus::Pending,
-            ),
+                status: LpNodeDisbursalStatus::Pending,
+            },
         );
+
         env.events().publish(
-            (("NodSelect"), request_id, selected_node_id.clone()),
+            (("Node Selected"), request_id, selected_node_id.clone()),
             algorithm,
         );
 

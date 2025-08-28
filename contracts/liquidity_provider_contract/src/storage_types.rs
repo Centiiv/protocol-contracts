@@ -38,8 +38,17 @@ pub struct LpNode {
 }
 
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum LpNodeStatus {
     Active,
     Inactive,
+}
+
+#[contracttype]
+#[derive(PartialEq, Clone, Debug)]
+pub enum Algorithm {
+    Wrr,
+    Greedy,
+    Scoring,
+    Rl,
 }
