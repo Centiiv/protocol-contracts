@@ -2,12 +2,144 @@
 
 use crate::liquidity_provider::{LiquidityProviderContract, LiquidityProviderContractClient};
 
-use super::*;
-use soroban_sdk::{vec, Env, String};
+use soroban_sdk::{testutils::Address as _, token, Address, Bytes, Env, String};
 
-fn setup<'a>() -> (Env, LiquidityProviderContractClient<'a>) {
+use crate::storage_types::DataKey;
+
+use wallet_contract::wallet::{WalletContract, WalletContractClient};
+
+fn generate_addresses(env: &Env) -> Address {
+    Address::generate(env)
+}
+
+fn create_token_contract<'a>(e: &Env, admin: &Address) -> (Address, token::StellarAssetClient<'a>) {
+    let contract_address = e.register_stellar_asset_contract_v2(admin.clone());
+    (
+        contract_address.address(),
+        token::StellarAssetClient::new(e, &contract_address.address()),
+    )
+}
+
+fn create_user(
+    env: &Env,
+    token: &token::StellarAssetClient,
+    admin: &Address,
+    amount: i128,
+) -> (Address, Address) {
+    let user = Address::generate(env);
+    token.mint(admin, &amount);
+    token.mint(&user, &amount);
+    (user, admin.clone())
+}
+
+fn setup<'a>() -> (
+    Env,
+    LiquidityProviderContractClient<'a>,
+    WalletContractClient<'a>,
+    Address,
+    token::StellarAssetClient<'a>,
+    (Address, Address),
+) {
     let env = Env::default();
-    let contract_id = env.register(LiquidityProviderContract, ());
+    env.mock_all_auths();
+
+    let admin = generate_addresses(&env);
+    let (token_address, token_client) = create_token_contract(&env, &admin);
+    let (buyer, admin) = create_user(&env, &token_client, &admin, 10000);
+
+    let central_account = generate_addresses(&env);
+
+    let wallet_id = env.register(
+        WalletContract,
+        (
+            admin.clone(),
+            token_address.clone(),
+            central_account.clone(),
+        ),
+    );
+    let wallet_client = WalletContractClient::new(&env, &wallet_id);
+
+    let contract_id = env.register(
+        LiquidityProviderContract,
+        (admin.clone(), token_address.clone(), wallet_id.clone()),
+    );
     let client = LiquidityProviderContractClient::new(&env, &contract_id);
-    (env, client)
+
+    (
+        env,
+        client,
+        wallet_client,
+        token_address,
+        token_client,
+        (buyer, admin),
+    )
+}
+
+#[test]
+fn test_initialize() {
+    let (env, escrow_client, wallet_client, token_address, _token_client, _) = setup();
+
+    let stored_usdc: Address = env.as_contract(&escrow_client.address, || {
+        env.storage().persistent().get(&DataKey::Usdc).unwrap()
+    });
+    let stored_wallet: Address = env.as_contract(&escrow_client.address, || {
+        env.storage().persistent().get(&DataKey::Wallet).unwrap()
+    });
+
+    assert_eq!(stored_usdc, token_address);
+    assert_eq!(stored_wallet, wallet_client.address);
+}
+
+#[test]
+fn test_register_lp_node_success() {
+    let (env, lp_client, _wallet_client, _token_address, _token_client, (_buyer, _admin)) = setup();
+
+    let lp_id = Bytes::from_array(&env, &[1, 2, 3, 4]);
+
+    let result = lp_client.try_register_lp_node(&lp_id, &1000, &120, &95, &30);
+    assert!(result.is_ok());
+
+    let second_reg_result = lp_client.try_register_lp_node(&lp_id, &500, &100, &90, &25);
+    assert!(second_reg_result.is_err());
+}
+
+#[test]
+fn test_create_disbursal_request_success() {
+    let (env, lp_client, _wallet_client, _token_address, _token_client, (buyer, _admin)) = setup();
+
+    let req_id = Bytes::from_array(&env, &[9, 9, 9, 9]);
+
+    let result = lp_client.try_create_disbursal_request(&req_id, &buyer, &500);
+    assert!(result.is_ok());
+
+    let bad_req = Bytes::from_array(&env, &[8, 8, 8, 8]);
+    let result2 = lp_client.try_create_disbursal_request(&bad_req, &buyer, &0);
+    assert!(result2.is_err());
+}
+
+#[test]
+fn test_select_lp_node_with_wrr() {
+    let (env, lp_client, _wallet_client, _token_address, _token_client, (buyer, _admin)) = setup();
+
+    let lp_id1 = Bytes::from_array(&env, &[1, 1, 1, 1]);
+    let lp_id2 = Bytes::from_array(&env, &[2, 2, 2, 2]);
+
+    let _ = lp_client
+        .try_register_lp_node(&lp_id1, &1000, &150, &95, &30)
+        .unwrap();
+
+    let _ = lp_client
+        .try_register_lp_node(&lp_id2, &2000, &120, &90, &25)
+        .unwrap();
+
+    let req_id = Bytes::from_array(&env, &[5, 5, 5, 5]);
+    let _ = lp_client
+        .try_create_disbursal_request(&req_id, &buyer, &500)
+        .unwrap();
+
+    let algo: String = String::from_str(&env, "wrr");
+
+    let chosen = lp_client.try_select_lp_node(&req_id, &algo, &None::<Bytes>);
+
+    assert!(chosen.is_err());
 }

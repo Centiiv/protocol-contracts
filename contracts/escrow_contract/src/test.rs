@@ -105,6 +105,10 @@ fn test_lock_and_release() {
 
     escrow_client.lock_funds(&req_id, &buyer, &lp_node, &1000, &60);
 
+    let lp_balance = wallet_client.get_balance(&lp_node);
+
+    assert_eq!(lp_balance, 0);
+
     let escrow = escrow_client.get_escrow_status(&req_id).unwrap();
 
     assert_eq!(escrow.amount, 1000);

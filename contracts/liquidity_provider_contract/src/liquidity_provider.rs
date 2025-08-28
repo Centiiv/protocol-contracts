@@ -1,6 +1,4 @@
-use soroban_sdk::{
-    contract, contractimpl, symbol_short, xdr::ToXdr, Address, Bytes, Env, Map, String,
-};
+use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, Bytes, Env, Map, String};
 
 use crate::{
     error::ContractError,
@@ -12,7 +10,7 @@ pub struct LiquidityProviderContract;
 
 #[contractimpl]
 impl LiquidityProviderContract {
-    pub fn initialize(env: Env, admin: Address, usdc_asset: Address, wallet_contract: Address) {
+    pub fn __constructor(env: Env, admin: Address, usdc_asset: Address, wallet_contract: Address) {
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
         env.storage()
@@ -99,7 +97,7 @@ impl LiquidityProviderContract {
         request_id: Bytes,
         algorithm: String,
         offchain_node_id: Option<Bytes>,
-    ) -> Bytes {
+    ) -> Result<Bytes, ContractError> {
         let request: LpNodeRequest = env.storage().persistent().get(&request_id).unwrap();
 
         let amount = request.amount;
@@ -131,12 +129,12 @@ impl LiquidityProviderContract {
                 .map(|(_id, node)| node.0 * node.1 / 10000)
                 .sum::<i128>();
             if total_weight == 0 {
-                panic!("No suitable LP node");
+                return Err(ContractError::NoSuitableLPNode);
             }
             let current_index: i128 = env
                 .storage()
                 .persistent()
-                .get(&symbol_short!("last_idx"))
+                .get(&DataKey::LastIdx)
                 .unwrap_or(0);
             let mut weight_sum = 0;
             for (node_id, node) in nodes.iter() {
@@ -146,10 +144,9 @@ impl LiquidityProviderContract {
                     break;
                 }
             }
-            env.storage().persistent().set(
-                &symbol_short!("last_idx"),
-                &((current_index + 1) % total_weight),
-            );
+            env.storage()
+                .persistent()
+                .set(&DataKey::LastIdx, &((current_index + 1) % total_weight));
         } else if algorithm == String::from_str(&env, "greedy") {
             selected_node_id = nodes
                 .iter()
@@ -174,14 +171,14 @@ impl LiquidityProviderContract {
         } else if algorithm == String::from_str(&env, "rl") {
             selected_node_id = offchain_node_id.unwrap();
             if !nodes.contains_key(selected_node_id.clone()) {
-                panic!("Invalid LP node");
+                return Err(ContractError::InvalidLPNode);
             }
         } else {
-            panic!("Unsupported algorithm");
+            return Err(ContractError::UnsupportedAlgorithm);
         }
 
         if selected_node_id.is_empty() {
-            panic!("No suitable LP node");
+            return Err(ContractError::NoSuitableLPNode);
         }
 
         env.storage().persistent().set(
@@ -190,7 +187,7 @@ impl LiquidityProviderContract {
                 request.user_id,
                 selected_node_id.clone(),
                 amount,
-                String::from_str(&env, "pending"),
+                LpNodeDisbursalStatus::Pending,
             ),
         );
         env.events().publish(
@@ -198,7 +195,7 @@ impl LiquidityProviderContract {
             algorithm,
         );
 
-        selected_node_id
+        Ok(selected_node_id)
     }
 
     pub fn accept_disbursal_request(
