@@ -19,8 +19,9 @@ pub struct Payment {
 }
 
 #[contracttype]
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum PaymentStatus {
+    Pending,
     Completed,
     Failed,
 }

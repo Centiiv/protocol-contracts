@@ -518,6 +518,7 @@ name = "escrow_contract"
 version = "0.0.0"
 dependencies = [
  "soroban-sdk",
+ "wallet_contract",
 ]
 
 [[package]]
@@ -749,6 +750,7 @@ name = "liquidity_provider_contract"
 version = "0.0.0"
 dependencies = [
  "soroban-sdk",
+ "wallet_contract",
 ]
 
 [[package]]

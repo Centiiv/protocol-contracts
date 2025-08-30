@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, token, Address, Bytes, Env, String};
+use soroban_sdk::{contract, contractimpl, token, Address, Bytes, Env};
 
 use crate::{
     error::PaymentContractError,
@@ -10,13 +10,11 @@ pub struct PaymentModule;
 
 #[contractimpl]
 impl PaymentModule {
-    // Initialize contract with USDC asset
-    pub fn initialize(env: Env, admin: Address, usdc_asset: Address) {
+    pub fn __constructor(env: Env, admin: Address, usdc_asset: Address) {
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
     }
 
-    // Process a USDC payment
     pub fn make_payment(
         env: Env,
         payment_id: Bytes,
@@ -36,9 +34,7 @@ impl PaymentModule {
         }
 
         let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
-
         let token_client = token::Client::new(&env, &usdc_asset);
-
         token_client.transfer(&sender, &receiver, &amount);
 
         let stellar_tx_id = Bytes::from_array(&env, &[0u8; 32]);
@@ -56,17 +52,20 @@ impl PaymentModule {
         env.storage().persistent().set(&payment_id, &payment);
 
         env.events().publish(
-            (("Payment Processed"), payment_id.clone(), invoice_id),
-            (amount, receiver),
+            (("Processed"), payment.payment_id, payment.invoice_id),
+            (payment.amount, payment.receiver),
         );
 
         Ok(payment_id)
     }
 
-    pub fn get_payment_status(
-        env: Env,
-        payment_id: Bytes,
-    ) -> Option<(Bytes, Address, Address, i128, String)> {
+    pub fn get_balance(env: Env, address: Address) -> i128 {
+        let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+        let token_client = token::Client::new(&env, &usdc_asset);
+        token_client.balance(&address)
+    }
+
+    pub fn get_payment_status(env: Env, payment_id: Bytes) -> Option<Payment> {
         env.storage().persistent().get(&payment_id)
     }
 }
