@@ -2,7 +2,7 @@
 
 use crate::{
     liquidity_provider::{LiquidityProviderContract, LiquidityProviderContractClient},
-    storage_types::Algorithm,
+    storage_types::{Algorithm, LpNodeStatus, RegistrationStatus},
 };
 
 use soroban_sdk::{testutils::Address as _, token, Address, Bytes, Env};
@@ -97,13 +97,80 @@ fn test_initialize() {
 fn test_register_lp_node_success() {
     let (env, lp_client, _wallet_client, _token_address, _token_client, (_buyer, _admin)) = setup();
 
-    let lp_id = Bytes::from_array(&env, &[1, 2, 3, 4]);
+    let lp_id = generate_addresses(&env);
 
     let result = lp_client.try_register_lp_node(&lp_id, &1000, &120, &95, &30);
     assert!(result.is_ok());
 
     let second_reg_result = lp_client.try_register_lp_node(&lp_id, &500, &100, &90, &25);
     assert!(second_reg_result.is_err());
+}
+
+#[test]
+fn test_register_lp_node_with_invalid_values() {
+    let (env, lp_client, _wallet_client, _token_address, _token_client, _) = setup();
+
+    let lp_id = generate_addresses(&env);
+
+    let result = lp_client.try_register_lp_node(&lp_id, &0, &100, &90, &30);
+    assert!(result.is_err());
+
+    let result = lp_client.try_register_lp_node(&lp_id, &1000, &0, &120, &30);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_approve_unregistered_lp_node_fails() {
+    let (env, lp_client, _wallet_client, _token_address, _token_client, _) = setup();
+
+    let lp_id = generate_addresses(&env);
+
+    let status = lp_client.get_lp_registration_status(&lp_id);
+    assert_eq!(status, RegistrationStatus::Unregistered);
+}
+
+#[test]
+fn test_duplicate_disbursal_request_id_fails() {
+    let (env, lp_client, _wallet_client, _token_address, _token_client, (buyer, _admin)) = setup();
+
+    let req_id = Bytes::from_array(&env, &[7, 7, 7, 7]);
+
+    let _ = lp_client
+        .try_create_disbursal_request(&req_id, &buyer, &500)
+        .unwrap();
+    let result = lp_client.try_create_disbursal_request(&req_id, &buyer, &600);
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_select_lp_node_invalid_algorithm() {
+    let (env, lp_client, _wallet_client, _token_address, _token_client, (buyer, _admin)) = setup();
+
+    let req_id = Bytes::from_array(&env, &[3, 3, 3, 3]);
+    let _ = lp_client
+        .try_create_disbursal_request(&req_id, &buyer, &500)
+        .unwrap();
+
+    let algo = Algorithm::Wrr;
+    let result = lp_client.try_select_lp_node(&req_id, &algo, &None::<Bytes>);
+    assert!(result.is_err(), "Should fail if no LP nodes are available");
+}
+
+#[test]
+fn test_approve_lp_node_success() {
+    let (env, lp_client, _wallet_client, _token_address, _token_client, (_buyer, _admin)) = setup();
+
+    let lp_id = generate_addresses(&env);
+
+    let result = lp_client.try_register_lp_node(&lp_id, &1000, &120, &95, &30);
+    assert!(result.is_ok());
+
+    let second_reg_result = lp_client.try_register_lp_node(&lp_id, &500, &100, &90, &25);
+    assert!(second_reg_result.is_err());
+
+    let status = lp_client.get_lp_node_status(&lp_id);
+    assert_eq!(status, LpNodeStatus::AwaitingApproval);
 }
 
 #[test]
@@ -124,16 +191,13 @@ fn test_create_disbursal_request_success() {
 fn test_select_lp_node_with_wrr() {
     let (env, lp_client, _wallet_client, _token_address, _token_client, (buyer, _admin)) = setup();
 
-    let lp_id1 = Bytes::from_array(&env, &[1, 1, 1, 1]);
-    let lp_id2 = Bytes::from_array(&env, &[2, 2, 2, 2]);
+    let lp_add = generate_addresses(&env);
 
     let _ = lp_client
-        .try_register_lp_node(&lp_id1, &1000, &150, &95, &30)
+        .try_register_lp_node(&lp_add, &1000, &150, &95, &30)
         .unwrap();
 
-    let _ = lp_client
-        .try_register_lp_node(&lp_id2, &2000, &120, &90, &25)
-        .unwrap();
+    let _ = lp_client.try_register_lp_node(&lp_add, &2000, &120, &90, &25);
 
     let req_id = Bytes::from_array(&env, &[5, 5, 5, 5]);
     let _ = lp_client

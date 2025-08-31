@@ -14,4 +14,9 @@ pub enum ContractError {
     UnsupportedAlgorithm = 8,
     RequestNotFound = 9,
     InvalidRequest = 10,
+    NotFound = 11,
+    NotAuthorized = 12,
+    RequestIdAlreadyExists = 13,
+    InvalidEarnings = 14,
+    InvalidAmount = 15,
 }

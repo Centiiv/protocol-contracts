@@ -8,6 +8,8 @@ pub enum DataKey {
     Wallet,
     LastIdx,
     NodeIDs,
+    LpNodeStatus(Address),
+    LpNode(Address),
 }
 
 #[contracttype]
@@ -16,6 +18,14 @@ pub enum LpNodeDisbursalStatus {
     Pending,
     Accepted,
     Completed,
+}
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub enum RegistrationStatus {
+    Unregistered,
+    Pending,
+    Approved,
+    Rejected,
 }
 
 #[contracttype]
@@ -34,7 +44,8 @@ pub struct LpNode {
     pub exchange_rate: i128,
     pub success_rate: i128,
     pub avg_payout_time: i128,
-    pub s_active: LpNodeStatus,
+    pub operational_status: LpNodeStatus,
+    pub registration_status: RegistrationStatus,
 }
 
 #[contracttype]
@@ -42,6 +53,9 @@ pub struct LpNode {
 pub enum LpNodeStatus {
     Active,
     Inactive,
+    NoLiquidity,
+    Suspended,
+    AwaitingApproval,
 }
 
 #[contracttype]

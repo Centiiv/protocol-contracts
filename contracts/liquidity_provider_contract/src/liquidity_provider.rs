@@ -1,9 +1,15 @@
-use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, Bytes, Env, Map, String};
+use soroban_sdk::{
+    contract, contractimpl,
+    token::{self, TokenClient},
+    xdr::ToXdr,
+    Address, Bytes, Env, Map, String,
+};
 
 use crate::{
     error::ContractError,
     storage_types::{
         Algorithm, DataKey, LpNode, LpNodeDisbursalStatus, LpNodeRequest, LpNodeStatus,
+        RegistrationStatus,
     },
 };
 
@@ -24,18 +30,24 @@ impl LiquidityProviderContract {
 
     pub fn register_lp_node(
         env: Env,
-        lp_node_id: Bytes,
+        lp_node_address: Address,
         capacity: i128,
         exchange_rate: i128,
         success_rate: i128,
         avg_payout_time: i128,
     ) -> Result<(), ContractError> {
-        let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
-
-        admin.require_auth();
+        lp_node_address.require_auth();
 
         if capacity <= 0 || exchange_rate <= 0 || success_rate < 0 || avg_payout_time <= 0 {
             return Err(ContractError::InvlidLpNodeParameters);
+        }
+
+        if env
+            .storage()
+            .persistent()
+            .has(&DataKey::LpNode(lp_node_address.clone()))
+        {
+            return Err(ContractError::LpNodeIdAlreadyExists);
         }
 
         let lp_node = LpNode {
@@ -43,27 +55,32 @@ impl LiquidityProviderContract {
             exchange_rate,
             success_rate,
             avg_payout_time,
-            s_active: LpNodeStatus::Active,
+            operational_status: LpNodeStatus::AwaitingApproval,
+            registration_status: RegistrationStatus::Pending,
         };
 
-        env.storage().persistent().set(&lp_node_id, &lp_node);
+        env.storage()
+            .persistent()
+            .set(&DataKey::LpNode(lp_node_address.clone()), &lp_node);
 
-        let mut node_ids: Map<Bytes, bool> = env
+        Ok(())
+    }
+
+    pub fn approve_lp_node(env: Env, lp_node_address: Address) -> Result<(), ContractError> {
+        let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+        let mut node: LpNode = env
             .storage()
             .persistent()
-            .get(&DataKey::NodeIDs)
-            .unwrap_or(Map::new(&env));
+            .get(&DataKey::LpNode(lp_node_address.clone()))
+            .ok_or(ContractError::NotFound)?;
 
-        if node_ids.contains_key(lp_node_id.clone()) {
-            return Err(ContractError::LpNodeIdAlreadyExists);
-        }
+        node.operational_status = LpNodeStatus::Active;
+        node.registration_status = RegistrationStatus::Approved;
 
-        node_ids.set(lp_node_id.clone(), true);
-
-        env.storage().persistent().set(&DataKey::NodeIDs, &node_ids);
-
-        env.events()
-            .publish((("NodeReg",), lp_node_id), (capacity, exchange_rate));
+        env.storage()
+            .persistent()
+            .set(&DataKey::LpNode(lp_node_address), &node);
 
         Ok(())
     }
@@ -80,6 +97,10 @@ impl LiquidityProviderContract {
             return Err(ContractError::AmountMustBePositive);
         }
 
+        if env.storage().persistent().has(&request_id) {
+            return Err(ContractError::RequestIdAlreadyExists);
+        }
+
         let request = LpNodeRequest {
             user_id: user_id.clone(),
             lp_node_id: Bytes::new(&env),
@@ -91,6 +112,32 @@ impl LiquidityProviderContract {
 
         env.events()
             .publish(((("Request Created"), request_id), user_id), amount);
+        Ok(())
+    }
+
+    pub fn update_operational_status(
+        env: Env,
+        lp_node_address: Address,
+        new_status: LpNodeStatus,
+    ) -> Result<(), ContractError> {
+        lp_node_address.require_auth();
+
+        let mut node: LpNode = env
+            .storage()
+            .persistent()
+            .get(&DataKey::LpNode(lp_node_address.clone()))
+            .ok_or(ContractError::NotFound)?;
+
+        if node.registration_status != RegistrationStatus::Approved {
+            return Err(ContractError::NotAuthorized);
+        }
+
+        node.operational_status = new_status;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::LpNode(lp_node_address), &node);
+
         Ok(())
     }
 
@@ -244,38 +291,48 @@ impl LiquidityProviderContract {
     pub fn complete_payout(
         env: Env,
         request_id: Bytes,
+        beneficiary: Address,
+        amount: i128,
         lp_node_id: Address,
         earnings: i128,
     ) -> Result<(), ContractError> {
         lp_node_id.require_auth();
-
-        let mut request: LpNodeRequest = env.storage().persistent().get(&request_id).unwrap();
-
-        if request.lp_node_id != lp_node_id.clone().to_xdr(&env) {
-            return Err(ContractError::UnauthorizedLpNode);
+        if amount <= 0 || earnings < 0 {
+            return Err(ContractError::InvalidAmount);
         }
 
-        request.status = LpNodeDisbursalStatus::Completed;
+        let wallet_contract: Address = env.storage().persistent().get(&DataKey::Wallet).unwrap();
+        let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+        let token_client = token::Client::new(&env, &usdc_asset);
 
-        env.storage().persistent().set(&request_id, &request);
+        token_client.transfer(&wallet_contract, &beneficiary, &amount);
 
-        // Record earnings
-        let mut node_earnings: Map<Bytes, i128> = env
-            .storage()
-            .persistent()
-            .get(&lp_node_id.clone().to_xdr(&env))
-            .unwrap_or(Map::new(&env));
+        if earnings > 0 {
+            token_client.transfer(&wallet_contract, &lp_node_id, &earnings);
+        }
 
-        node_earnings.set(request_id.clone(), earnings);
-
-        env.storage()
-            .persistent()
-            .set(&lp_node_id.clone().to_xdr(&env), &node_earnings);
-
-        env.events()
-            .publish((("Payout Completed"), request_id, lp_node_id), earnings);
+        env.events().publish(
+            ("PayoutCompleted", request_id, lp_node_id),
+            (amount, earnings),
+        );
 
         Ok(())
+    }
+
+    pub fn get_lp_node_status(env: &Env, lp_id: Address) -> LpNodeStatus {
+        env.storage()
+            .persistent()
+            .get::<_, LpNode>(&DataKey::LpNode(lp_id))
+            .map(|node| node.operational_status)
+            .unwrap_or(LpNodeStatus::AwaitingApproval)
+    }
+
+    pub fn get_lp_registration_status(env: &Env, lp_id: Address) -> RegistrationStatus {
+        env.storage()
+            .persistent()
+            .get::<_, LpNode>(&DataKey::LpNode(lp_id))
+            .map(|node| node.registration_status)
+            .unwrap_or(RegistrationStatus::Unregistered)
     }
 
     pub fn get_disbursal_status(
@@ -292,5 +349,17 @@ impl LiquidityProviderContract {
             .get(&lp_node_id.to_xdr(&env))
             .unwrap_or(Map::new(&env));
         node_earnings.get(request_id).unwrap_or(0)
+    }
+
+    pub fn get_admin(env: &Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::Admin)
+    }
+
+    pub fn get_usdc(env: &Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::Usdc)
+    }
+
+    pub fn get_wallet_contract(env: &Env) -> Option<Address> {
+        env.storage().persistent().get(&DataKey::Wallet)
     }
 }
