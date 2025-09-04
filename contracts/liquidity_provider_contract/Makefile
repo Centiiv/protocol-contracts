@@ -5,6 +5,8 @@ test: build
 
 debug: build
 	RUST_BACKTRACE=full cargo test
+t: test
+	RUST_BACKTRACE=1 cargo test  -- --nocapture
 
 build:
 	stellar contract build
