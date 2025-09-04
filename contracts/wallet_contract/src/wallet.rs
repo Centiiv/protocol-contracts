@@ -6,7 +6,10 @@ pub struct WalletContract;
 
 #[contractimpl]
 impl WalletContract {
-    pub fn __constructor(env: Env, admin: Address, usdc_asset: Address, central_account: Address) {
+    pub fn init(env: Env, admin: Address, usdc_asset: Address, central_account: Address) {
+        if env.storage().persistent().has(&DataKey::Usdc) {
+            panic!("Already initialized");
+        }
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
         env.storage()
