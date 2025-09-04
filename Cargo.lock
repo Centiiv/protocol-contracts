@@ -746,11 +746,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
-name = "liquidity_provider_contract"
+name = "liquidity_manager"
 version = "0.0.0"
 dependencies = [
  "soroban-sdk",
- "wallet_contract",
+]
+
+[[package]]
+name = "liquidity_provider_contract"
+version = "0.0.0"
+dependencies = [
+ "liquidity_manager",
+ "soroban-sdk",
 ]
 
 [[package]]
@@ -833,13 +840,6 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
-
-[[package]]
-name = "payment-contract"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
-]
 
 [[package]]
 name = "pkcs8"

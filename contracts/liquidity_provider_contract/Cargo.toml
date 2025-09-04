@@ -10,7 +10,7 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-wallet_contract = {path = "../wallet_contract"}
+liquidity_manager = {path = "../liquidity_manager_contract/"}
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
