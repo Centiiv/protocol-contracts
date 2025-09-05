@@ -1,4 +1,3 @@
-//! Gateway Settings Manager Contract
 use soroban_sdk::{contract, contractimpl, Address, Env};
 
 use crate::{

@@ -3,23 +3,6 @@ use soroban_sdk::contracterror;
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ContractError {
-    //<<<<<<< Updated upstream
-    //    InvlidLpNodeParameters = 1,
-    //    LpNodeIdAlreadyExists = 2,
-    //    AmountMustBePositive = 3,
-    //    UnauthorizedLpNode = 4,
-    //    RequestNotPending = 5,
-    //    NoSuitableLPNode = 6,
-    //    InvalidLPNode = 7,
-    //    UnsupportedAlgorithm = 8,
-    //    RequestNotFound = 9,
-    //    InvalidRequest = 10,
-    //    NotFound = 11,
-    //    NotAuthorized = 12,
-    //    RequestIdAlreadyExists = 13,
-    //    InvalidEarnings = 14,
-    //    InvalidAmount = 15,
-    //=======
     InvalidAmount = 1,
     ZeroAddress = 2,
     InvalidSenderFeeRecipient = 3,

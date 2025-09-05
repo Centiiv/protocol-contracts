@@ -7,10 +7,6 @@ pub enum DataKey {
     Wallet,
     SettingsContract,
     NodeIDs,
-    //<<<<<<< Updated upstream
-    LpNodeStatus(Address),
-    LpNode(Address),
-    //=======
     Nonces,
     Order(Bytes),
 }
@@ -19,59 +15,8 @@ pub enum DataKey {
 #[derive(Clone, Debug)]
 pub struct LpNode {
     pub capacity: i128,
-    //>>>>>>> Stashed changes
-    //}
-    //
-    //#[contracttype]
-    //#[derive(Clone, Debug, PartialEq)]
-    //pub enum LpNodeDisbursalStatus {
-    //    Pending,
-    //    Accepted,
-    //    Completed,
-    //}
-    //#[contracttype]
-    //#[derive(Clone, Debug, PartialEq)]
-    //pub enum RegistrationStatus {
-    //    Unregistered,
-    //    Pending,
-    //    Approved,
-    //    Rejected,
-    //}
-    //
-    //#[contracttype]
-    //#[derive(Clone, Debug)]
-    //pub struct LpNodeRequest {
-    //    pub user_id: Address,
-    //    pub lp_node_id: Bytes,
-    //    pub amount: i128,
-    //    pub status: LpNodeDisbursalStatus,
-    //}
-    //
-    //#[contracttype]
-    //<<<<<<< Updated upstream
-    //#[derive(Clone)]
-    //pub struct LpNode {
-    //    pub capacity: i128,
-    //    pub exchange_rate: i128,
-    //    pub success_rate: i128,
-    //    pub avg_payout_time: i128,
-    //    pub operational_status: LpNodeStatus,
-    //    pub registration_status: RegistrationStatus,
-    //}
-    //
-    //#[contracttype]
-    //=======
 }
 
-//>>>>>>> Stashed changes
-#[derive(Clone, Debug, PartialEq)]
-pub enum LpNodeStatus {
-    Active,
-    Inactive,
-    NoLiquidity,
-    Suspended,
-    AwaitingApproval,
-}
 #[contracttype]
 #[derive(Clone, Debug)]
 pub struct OrderParams {
