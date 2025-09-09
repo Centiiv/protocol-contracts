@@ -1,4 +1,3 @@
-//! Gateway Main Contract
 use crate::{
     error::ContractError,
     liquidity_provider_trait::IGateway,
@@ -47,7 +46,6 @@ impl IGateway for GatewayContract {
         let (protocol_fee_percent, max_bps) = settings_client.get_fee_details();
         let protocol_fee = (params.amount * protocol_fee_percent as i128) / max_bps as i128;
 
-        // Transfer USDC to wallet_contract (via EscrowContract in workflow)
         token_client.transfer(
             &params.sender,
             &wallet_contract,
