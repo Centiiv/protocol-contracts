@@ -1,4 +1,4 @@
-use soroban_sdk::{contract, contractimpl, Address, Env};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env};
 
 use crate::{
     error::ContractError,
@@ -124,5 +124,12 @@ impl LPSettingManagerContract {
             .persistent()
             .get(&DataKey::TokenSupported(token))
             .unwrap_or(false)
+    }
+
+    pub fn upgrade_lp_manager(e: Env, new_wasm_hash: BytesN<32>) {
+        let admin: Address = e.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        e.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }
