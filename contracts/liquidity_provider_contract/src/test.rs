@@ -67,6 +67,7 @@ fn setup<'a>() -> SetupResult<'a> {
         },
     }
 }
+
 #[test]
 fn test_register_lp_node() {
     let setup_result = setup();
