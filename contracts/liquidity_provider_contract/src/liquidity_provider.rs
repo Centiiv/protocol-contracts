@@ -170,7 +170,6 @@ impl IGateway for LPContract {
         let transfer_amount = liquidity_provider_amount - protocol_fee;
 
         if order.current_bps == 0 {
-            log!(&env, "Order fully fulfilled - setting is_fulfilled to true");
             order.is_fulfilled = true;
 
             if order.sender_fee > 0 {
@@ -294,6 +293,7 @@ impl IGateway for LPContract {
         let token_client = token::Client::new(&env, &usdc_asset);
         token_client.balance(&user)
     }
+
     fn get_order_id(env: Env, order_id: Bytes) -> Result<Bytes, ContractError> {
         let order: Order = env
             .storage()
