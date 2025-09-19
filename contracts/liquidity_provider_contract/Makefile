@@ -30,13 +30,12 @@ upload: build
 	@echo "✅ Wasm hash saved to wasm_hash.txt"
 
 WASM_HASH = f93bda98cb3b01c5093965b803763e6b2296d570d6e0de8342724ba9504e9993
-# Variables (change as needed)
+
 NETWORK      = testnet
 SOURCE       = josh
 ADMIN        = GA3N5T6H7QL5RH66C3CVU6IRALPFCMKYX753OWJY6BOE3ESEXBOMV2KN
 USDC_ASSET   = CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
 
-# Deploy the contract (just deployment, no initialization)
 deploy:
 	stellar contract deploy \
 	  --wasm-hash $(WASM_HASH) \
