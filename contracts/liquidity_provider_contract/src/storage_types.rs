@@ -1,54 +1,49 @@
-use soroban_sdk::{contracttype, Address, Bytes};
+use soroban_sdk::{contracttype, Address, Bytes, String};
 
 #[contracttype]
 #[derive(Clone, Debug)]
 pub enum DataKey {
-    Admin,
-    Usdc,
-    Wallet,
-    LastIdx,
+    SettingsContract,
     NodeIDs,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum LpNodeDisbursalStatus {
-    Pending,
-    Accepted,
-    Completed,
+    Nonces,
+    Order(Bytes),
+    Usdc,
 }
 
 #[contracttype]
 #[derive(Clone, Debug)]
-pub struct LpNodeRequest {
-    pub user_id: Address,
-    pub lp_node_id: Bytes,
-    pub amount: i128,
-    pub status: LpNodeDisbursalStatus,
-}
-
-#[contracttype]
-#[derive(Clone)]
 pub struct LpNode {
     pub capacity: i128,
-    pub exchange_rate: i128,
-    pub success_rate: i128,
-    pub avg_payout_time: i128,
-    pub s_active: LpNodeStatus,
 }
 
 #[contracttype]
-#[derive(Clone, Debug, PartialEq)]
-pub enum LpNodeStatus {
-    Active,
-    Inactive,
+#[derive(Clone, Debug)]
+pub struct OrderParams {
+    pub order_id: Bytes,
+    pub token: Address,
+    pub sender: Address,
+    pub amount: i128,
+    pub rate: i64,
+    pub sender_fee_recipient: Address,
+    pub sender_fee: i128,
+    pub refund_address: Address,
+    pub message_hash: String,
 }
 
 #[contracttype]
-#[derive(PartialEq, Clone, Debug)]
-pub enum Algorithm {
-    Wrr,
-    Greedy,
-    Scoring,
-    Rl,
+#[derive(Clone, Debug)]
+pub struct Order {
+    pub order_id: Bytes,
+    pub sender: Address,
+    pub token: Address,
+    pub sender_fee_recipient: Address,
+    pub sender_fee: i128,
+    pub protocol_fee: i128,
+    pub is_fulfilled: bool,
+    pub is_refunded: bool,
+    pub refund_address: Address,
+    pub current_bps: i128,
+    pub amount: i128,
+    pub rate: i64, // Add this
+    pub message_hash: String,
 }

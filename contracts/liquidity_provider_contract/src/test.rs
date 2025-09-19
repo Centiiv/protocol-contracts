@@ -1,148 +1,234 @@
-#![cfg(test)]
-
-use crate::{
-    liquidity_provider::{LiquidityProviderContract, LiquidityProviderContractClient},
-    storage_types::Algorithm,
+use crate::liquidity_provider::{LPContract, LPContractClient};
+#[cfg(test)]
+use crate::storage_types::{Order, OrderParams};
+use liquidity_manager::{
+    liquidity_manager::{LPSettingManagerContract, LPSettingManagerContractClient},
+    storage::ProtocolAddressType,
 };
+use soroban_sdk::{log, testutils::Address as _, token, Address, Bytes, Env, IntoVal, String};
 
-use soroban_sdk::{testutils::Address as _, token, Address, Bytes, Env};
-
-use crate::storage_types::DataKey;
-
-use wallet_contract::wallet::{WalletContract, WalletContractClient};
-
-fn generate_addresses(env: &Env) -> Address {
-    Address::generate(env)
-}
-
-fn create_token_contract<'a>(e: &Env, admin: &Address) -> (Address, token::StellarAssetClient<'a>) {
-    let contract_address = e.register_stellar_asset_contract_v2(admin.clone());
-    (
-        contract_address.address(),
-        token::StellarAssetClient::new(e, &contract_address.address()),
-    )
-}
-
-fn create_user(
+fn create_token_contract<'a>(
     env: &Env,
-    token: &token::StellarAssetClient,
     admin: &Address,
-    amount: i128,
-) -> (Address, Address) {
-    let user = Address::generate(env);
-    token.mint(admin, &amount);
-    token.mint(&user, &amount);
-    (user, admin.clone())
+) -> (Address, token::StellarAssetClient<'a>) {
+    let contract_id = env.register_stellar_asset_contract_v2(admin.clone());
+    (
+        contract_id.address(),
+        token::StellarAssetClient::new(env, &contract_id.address()),
+    )
 }
 
 fn setup<'a>() -> (
     Env,
-    LiquidityProviderContractClient<'a>,
-    WalletContractClient<'a>,
+    LPContractClient<'a>,
+    LPSettingManagerContractClient<'a>,
     Address,
     token::StellarAssetClient<'a>,
-    (Address, Address),
+    (Address, Address, Address, Address, Address),
 ) {
     let env = Env::default();
     env.mock_all_auths();
 
-    let admin = generate_addresses(&env);
-    let (token_address, token_client) = create_token_contract(&env, &admin);
-    let (buyer, admin) = create_user(&env, &token_client, &admin, 10000);
+    let admin = Address::generate(&env);
+    let (usdc_asset, token_client) = create_token_contract(&env, &admin);
+    let treasury = Address::generate(&env);
+    let aggregator = Address::generate(&env);
+    let sender = Address::generate(&env);
+    let lp_node = Address::generate(&env);
+    let refund_address = Address::generate(&env);
 
-    let central_account = generate_addresses(&env);
+    let lp_settings_contract_id = env.register(LPSettingManagerContract, ());
+    let lp_settings_client = LPSettingManagerContractClient::new(&env, &lp_settings_contract_id);
+    lp_settings_client.initialize(&admin);
+    lp_settings_client.update_protocol_address(&ProtocolAddressType::Treasury, &treasury);
+    lp_settings_client.update_protocol_address(&ProtocolAddressType::Aggregator, &aggregator);
 
-    let wallet_id = env.register(
-        WalletContract,
-        (
-            admin.clone(),
-            token_address.clone(),
-            central_account.clone(),
-        ),
-    );
-    let wallet_client = WalletContractClient::new(&env, &wallet_id);
+    let lp_contract_id = env.register(LPContract, ());
+    let lp_client = LPContractClient::new(&env, &lp_contract_id);
 
-    let contract_id = env.register(
-        LiquidityProviderContract,
-        (admin.clone(), token_address.clone(), wallet_id.clone()),
-    );
-    let client = LiquidityProviderContractClient::new(&env, &contract_id);
+    lp_client.initialize(&admin, &usdc_asset, &lp_settings_contract_id);
 
     (
         env,
-        client,
-        wallet_client,
-        token_address,
+        lp_client,
+        lp_settings_client,
+        usdc_asset,
         token_client,
-        (buyer, admin),
+        (admin, sender, lp_node, refund_address, aggregator),
     )
 }
 
 #[test]
-fn test_initialize() {
-    let (env, escrow_client, wallet_client, token_address, _token_client, _) = setup();
-
-    let stored_usdc: Address = env.as_contract(&escrow_client.address, || {
-        env.storage().persistent().get(&DataKey::Usdc).unwrap()
-    });
-    let stored_wallet: Address = env.as_contract(&escrow_client.address, || {
-        env.storage().persistent().get(&DataKey::Wallet).unwrap()
-    });
-
-    assert_eq!(stored_usdc, token_address);
-    assert_eq!(stored_wallet, wallet_client.address);
+fn test_register_lp_node() {
+    let (
+        env,
+        gateway_client,
+        _settings_client,
+        _usdc_asset,
+        _token_client,
+        (_admin, _sender, _lp_node, _refund_address, _aggregator),
+    ) = setup();
+    let lp_id = Bytes::from_array(&env, &[1u8; 32]);
+    let result = gateway_client.try_register_lp_node(&lp_id, &1000);
+    assert!(result.is_ok());
 }
 
 #[test]
-fn test_register_lp_node_success() {
-    let (env, lp_client, _wallet_client, _token_address, _token_client, (_buyer, _admin)) = setup();
+fn test_create_order() {
+    let (
+        env,
+        gateway_client,
+        _settings_client,
+        usdc_asset,
+        token_client,
+        (_admin, sender, _lp_node, refund_address, _aggregator),
+    ) = setup();
+    let order_id = Bytes::from_array(&env, &[2u8; 32]);
+    let sender_fee_recipient = Address::generate(&env);
+    let amount = 100_0000000_i128;
+    let sender_fee = 10_0000000_i128;
+    let rate = 9500_i64;
+    let message_hash = String::from_str(&env, "hash123");
 
-    let lp_id = Bytes::from_array(&env, &[1, 2, 3, 4]);
-
-    let result = lp_client.try_register_lp_node(&lp_id, &1000, &120, &95, &30);
+    let lp_id = Bytes::from_array(&env, &[1u8; 32]);
+    let result = gateway_client.try_register_lp_node(&lp_id, &1000);
     assert!(result.is_ok());
 
-    let second_reg_result = lp_client.try_register_lp_node(&lp_id, &500, &100, &90, &25);
-    assert!(second_reg_result.is_err());
-}
-
-#[test]
-fn test_create_disbursal_request_success() {
-    let (env, lp_client, _wallet_client, _token_address, _token_client, (buyer, _admin)) = setup();
-
-    let req_id = Bytes::from_array(&env, &[9, 9, 9, 9]);
-
-    let result = lp_client.try_create_disbursal_request(&req_id, &buyer, &500);
+    let order_params = OrderParams {
+        order_id: order_id.clone(),
+        token: usdc_asset,
+        sender: sender.clone(),
+        amount,
+        rate,
+        sender_fee_recipient,
+        sender_fee,
+        refund_address,
+        message_hash,
+    };
+    token_client.mint(&sender, &(amount + sender_fee));
+    let result = gateway_client.try_create_order(&order_params);
     assert!(result.is_ok());
 
-    let bad_req = Bytes::from_array(&env, &[8, 8, 8, 8]);
-    let result2 = lp_client.try_create_disbursal_request(&bad_req, &buyer, &0);
-    assert!(result2.is_err());
+    let order = gateway_client.get_order_info(&order_id);
+    assert_eq!(order.sender, sender);
+    assert_eq!(order.amount, amount);
+    assert_eq!(order_params.order_id, order_id);
+    assert_eq!(order.protocol_fee, amount / 100);
 }
 
 #[test]
-fn test_select_lp_node_with_wrr() {
-    let (env, lp_client, _wallet_client, _token_address, _token_client, (buyer, _admin)) = setup();
+fn test_settle_full_order() {
+    let (
+        env,
+        gateway_client,
+        _settings_client,
+        usdc_asset,
+        token_client,
+        (_admin, sender, lp_node, _refund_address, _aggregator),
+    ) = setup();
 
-    let lp_id1 = Bytes::from_array(&env, &[1, 1, 1, 1]);
-    let lp_id2 = Bytes::from_array(&env, &[2, 2, 2, 2]);
+    let lp_id = Bytes::from_array(&env, &[1u8; 32]);
+    let result = gateway_client.try_register_lp_node(&lp_id, &1000);
+    assert!(result.is_ok());
 
-    let _ = lp_client
-        .try_register_lp_node(&lp_id1, &1000, &150, &95, &30)
-        .unwrap();
+    let amount = 100_i128;
+    let sender_fee = 10_i128;
 
-    let _ = lp_client
-        .try_register_lp_node(&lp_id2, &2000, &120, &90, &25)
-        .unwrap();
+    token_client.mint(&sender, &(amount + sender_fee));
 
-    let req_id = Bytes::from_array(&env, &[5, 5, 5, 5]);
-    let _ = lp_client
-        .try_create_disbursal_request(&req_id, &buyer, &500)
-        .unwrap();
+    let order_id = Bytes::from_array(&env, &[2u8; 32]);
+    let split_order_id = Bytes::from_array(&env, &[3u8; 32]);
+    let sender_fee_recipient = Address::generate(&env);
+    let rate = 9500_i64;
+    let message_hash = String::from_str(&env, "hash123");
+    let settle_percent = 100_000_i128;
 
-    let algo = Algorithm::Wrr;
+    let order_params = OrderParams {
+        order_id: order_id.clone(),
+        token: usdc_asset,
+        sender: sender.clone(),
+        amount,
+        rate,
+        sender_fee_recipient: sender_fee_recipient.clone(),
+        sender_fee,
+        refund_address: Address::generate(&env),
+        message_hash,
+    };
 
-    let chosen = lp_client.try_select_lp_node(&req_id, &algo, &None::<Bytes>);
+    gateway_client.create_order(&order_params);
 
-    assert!(chosen.is_err());
+    let created_order = gateway_client.get_order_info(&order_id);
+    assert!(!created_order.is_fulfilled);
+    assert!(!created_order.is_refunded);
+    assert_eq!(created_order.amount, amount);
+
+    env.mock_all_auths();
+
+    let result = gateway_client.try_settle(&split_order_id, &order_id, &lp_node, &settle_percent);
+
+    assert!(result.is_ok());
+
+    let settled_order = gateway_client.get_order_info(&order_id);
+
+    assert!(settled_order.is_fulfilled, "Order should be fulfilled");
+
+    assert_eq!(settled_order.current_bps, 0, "Current BPS should be 0");
+
+    assert_eq!(settled_order.amount, 0, "Remaining amount should be 0");
+}
+
+#[test]
+fn test_refund_order() {
+    let (
+        env,
+        gateway_client,
+        _settings_client,
+        usdc_asset,
+        token_client,
+        (_admin, sender, _lp_node, refund_address, _aggregator),
+    ) = setup();
+
+    let lp_id = Bytes::from_array(&env, &[1u8; 32]);
+    let result = gateway_client.try_register_lp_node(&lp_id, &1000);
+    assert!(result.is_ok());
+
+    let amount = 100_i128;
+    let sender_fee = 10_i128;
+
+    token_client.mint(&sender, &(amount + sender_fee));
+
+    let order_id = Bytes::from_array(&env, &[4u8; 32]);
+    let sender_fee_recipient = Address::generate(&env);
+    let rate = 9500_i64;
+    let message_hash = String::from_str(&env, "hash123");
+
+    let order_params = OrderParams {
+        order_id: order_id.clone(),
+        token: usdc_asset,
+        sender: sender.clone(),
+        amount,
+        rate,
+        sender_fee_recipient: sender_fee_recipient.clone(),
+        sender_fee,
+        refund_address: refund_address.clone(),
+        message_hash,
+    };
+
+    gateway_client.create_order(&order_params);
+    let created_order = gateway_client.get_order_info(&order_id);
+    assert!(!created_order.is_fulfilled);
+    assert!(!created_order.is_refunded);
+    assert_eq!(created_order.amount, amount);
+
+    let refund_fee = 1_i128;
+    env.mock_all_auths();
+    let result = gateway_client.try_refund(&order_id, &refund_fee);
+    assert!(result.is_ok(), "Refund should succeed");
+
+    let refunded_order = gateway_client.get_order_info(&order_id);
+    assert!(refunded_order.is_refunded, "Order should be refunded");
+    let balance = gateway_client.get_token_balance(&refund_address);
+    assert_eq!(balance, 109);
+
+    assert_eq!(refunded_order.current_bps, 0, "Current BPS should be 0");
 }

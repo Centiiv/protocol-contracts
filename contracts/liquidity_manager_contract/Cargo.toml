@@ -1,5 +1,5 @@
 [package]
-name = "escrow_contract"
+name = "liquidity-manager"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -10,7 +10,6 @@ doctest = false
 
 [dependencies]
 soroban-sdk = { workspace = true }
-wallet_contract = {path = "../wallet_contract"}
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
