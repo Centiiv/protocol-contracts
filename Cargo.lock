@@ -514,14 +514,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bfcf67fea2815c2fc3b90873fae90957be12ff417335dfadc7f52927feb03b2"
 
 [[package]]
-name = "escrow_contract"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
- "wallet_contract",
-]
-
-[[package]]
 name = "ethnum"
 version = "1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -746,7 +738,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9fbbcab51052fe104eb5e5d351cf728d30a5be1fe14d9be8a3b097481fb97de"
 
 [[package]]
-name = "liquidity_manager"
+name = "liquidity-manager"
 version = "0.0.0"
 dependencies = [
  "soroban-sdk",
@@ -756,7 +748,7 @@ dependencies = [
 name = "liquidity_provider_contract"
 version = "0.0.0"
 dependencies = [
- "liquidity_manager",
+ "liquidity-manager",
  "soroban-sdk",
 ]
 
@@ -1474,13 +1466,6 @@ name = "version_check"
 version = "0.9.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
-
-[[package]]
-name = "wallet_contract"
-version = "0.0.0"
-dependencies = [
- "soroban-sdk",
-]
 
 [[package]]
 name = "wasi"

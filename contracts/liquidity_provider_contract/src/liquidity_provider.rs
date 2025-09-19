@@ -3,26 +3,29 @@ use crate::{
     liquidity_provider_trait::IGateway,
     storage_types::{DataKey, LpNode, Order, OrderParams},
 };
-use liquidity_manager::{self, liquidity_manager::GatewaySettingManagerContractClient};
-use soroban_sdk::{contract, contractimpl, token, Address, Bytes, Env, Map};
+use liquidity_manager::{self, liquidity_manager::LPSettingManagerContractClient};
+use soroban_sdk::{contract, contractimpl, log, token, Address, Bytes, Env, Map};
 
 #[contract]
-pub struct GatewayContract;
+pub struct LPContract;
 
 #[contractimpl]
-impl IGateway for GatewayContract {
+impl IGateway for LPContract {
     fn create_order(env: Env, params: OrderParams) -> Result<(), ContractError> {
         params.sender.require_auth();
+
         let settings_contract: Address = env
             .storage()
             .persistent()
             .get(&DataKey::SettingsContract)
             .unwrap();
-        let settings_client = GatewaySettingManagerContractClient::new(&env, &settings_contract);
+
+        let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
 
         if settings_client.is_paused() {
             return Err(ContractError::Paused);
         }
+
         if params.amount <= 0 {
             return Err(ContractError::InvalidAmount);
         }
@@ -41,19 +44,20 @@ impl IGateway for GatewayContract {
         }
 
         let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
-        let wallet_contract: Address = env.storage().persistent().get(&DataKey::Wallet).unwrap();
         let token_client = token::Client::new(&env, &usdc_asset);
         let (protocol_fee_percent, max_bps) = settings_client.get_fee_details();
         let protocol_fee = (params.amount * protocol_fee_percent as i128) / max_bps as i128;
 
         token_client.transfer(
             &params.sender,
-            &wallet_contract,
+            &env.current_contract_address(),
             &(params.amount + params.sender_fee),
         );
 
         let order = Order {
+            order_id: params.order_id.clone(),
             sender: params.sender.clone(),
+            token: usdc_asset,
             amount: params.amount,
             sender_fee_recipient: params.sender_fee_recipient,
             sender_fee: params.sender_fee,
@@ -61,8 +65,11 @@ impl IGateway for GatewayContract {
             is_fulfilled: false,
             is_refunded: false,
             refund_address: params.refund_address.clone(),
-            current_bps: max_bps,
+            current_bps: max_bps as i128,
+            rate: params.rate,
+            message_hash: params.message_hash.clone(),
         };
+
         env.storage()
             .persistent()
             .set(&DataKey::Order(params.order_id.clone()), &order);
@@ -97,76 +104,114 @@ impl IGateway for GatewayContract {
         split_order_id: Bytes,
         order_id: Bytes,
         liquidity_provider: Address,
-        settle_percent: i64,
-    ) -> Result<(), ContractError> {
-        let settings_contract: Address = env
-            .storage()
-            .persistent()
-            .get(&DataKey::SettingsContract)
-            .unwrap();
-        let settings_client = GatewaySettingManagerContractClient::new(&env, &settings_contract);
+        settle_percent: i128,
+    ) -> Result<bool, ContractError> {
+        let settings_contract: Address =
+            match env.storage().persistent().get(&DataKey::SettingsContract) {
+                Some(addr) => addr,
+                None => {
+                    return Err(ContractError::SettingsContractNotSet);
+                }
+            };
+
+        let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
+
         let aggregator: Address = settings_client.get_aggregator_address();
+
         aggregator.require_auth();
 
         if settle_percent <= 0 || settle_percent > 100_000 {
             return Err(ContractError::InvalidSettlePercent);
         }
 
-        let mut order: Order = env
+        let order_option: Option<Order> = env
             .storage()
             .persistent()
-            .get(&DataKey::Order(order_id.clone()))
-            .ok_or(ContractError::OrderNotFound)?;
+            .get(&DataKey::Order(order_id.clone()));
+
+        if order_option.is_none() {
+            return Err(ContractError::OrderNotFound);
+        }
+
+        let mut order: Order = order_option.unwrap();
 
         if order.is_fulfilled {
             return Err(ContractError::OrderFulfilled);
         }
+
         if order.is_refunded {
             return Err(ContractError::OrderRefunded);
         }
 
-        let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
-        let wallet_contract: Address = env.storage().persistent().get(&DataKey::Wallet).unwrap();
+        let usdc_asset: Address = match env.storage().persistent().get(&DataKey::Usdc) {
+            Some(addr) => addr,
+            None => {
+                return Err(ContractError::UsdcNotSet);
+            }
+        };
+
         let treasury: Address = settings_client.get_treasury_address();
+
         let token_client = token::Client::new(&env, &usdc_asset);
 
         let current_order_bps = order.current_bps;
 
         order.current_bps -= settle_percent;
 
-        let liquidity_provider_amount =
-            (order.amount * settle_percent as i128) / current_order_bps as i128;
+        let liquidity_provider_amount = (order.amount * settle_percent) / current_order_bps;
 
         order.amount -= liquidity_provider_amount;
 
-        let (protocol_fee_percent, _max_bps) = settings_client.get_fee_details();
+        let (protocol_fee_percent, max_bps) = settings_client.get_fee_details();
 
-        let protocol_fee = (liquidity_provider_amount * protocol_fee_percent as i128) / 100_000i128;
+        let protocol_fee =
+            (liquidity_provider_amount * protocol_fee_percent as i128) / (max_bps as i128);
 
         let transfer_amount = liquidity_provider_amount - protocol_fee;
 
         if order.current_bps == 0 {
+            log!(&env, "Order fully fulfilled - setting is_fulfilled to true");
             order.is_fulfilled = true;
 
             if order.sender_fee > 0 {
-                token_client.transfer(
-                    &wallet_contract,
+                match token_client.try_transfer(
+                    &env.current_contract_address(),
                     &order.sender_fee_recipient,
                     &order.sender_fee,
-                );
-
-                env.events().publish(
-                    ("SenderFeeTransferred", order.sender_fee_recipient.clone()),
-                    order.sender_fee,
-                );
+                ) {
+                    Ok(_) => log!(&env, "Sender fee transferred successfully"),
+                    Err(_) => {
+                        return Err(ContractError::TransferFailed);
+                    }
+                }
             }
         }
 
         if protocol_fee > 0 {
-            token_client.transfer(&wallet_contract, &treasury, &protocol_fee);
+            match token_client.try_transfer(
+                &env.current_contract_address(),
+                &treasury,
+                &protocol_fee,
+            ) {
+                Ok(_) => log!(&env, "Protocol fee transferred successfully"),
+                Err(_) => {
+                    return Err(ContractError::TransferFailed);
+                }
+            }
         }
 
-        token_client.transfer(&wallet_contract, &liquidity_provider, &transfer_amount);
+        if transfer_amount > 0 {
+            match token_client.try_transfer(
+                &env.current_contract_address(),
+                &liquidity_provider,
+                &transfer_amount,
+            ) {
+                Ok(_) => log!(&env, "Liquidity provider amount transferred successfully"),
+                Err(_) => {
+                    return Err(ContractError::TransferFailed);
+                }
+            }
+        }
 
         env.storage()
             .persistent()
@@ -177,7 +222,7 @@ impl IGateway for GatewayContract {
             settle_percent,
         );
 
-        Ok(())
+        Ok(true)
     }
 
     fn refund(env: Env, order_id: Bytes, fee: i128) -> Result<(), ContractError> {
@@ -186,7 +231,8 @@ impl IGateway for GatewayContract {
             .persistent()
             .get(&DataKey::SettingsContract)
             .unwrap();
-        let settings_client = GatewaySettingManagerContractClient::new(&env, &settings_contract);
+        let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
+
         let aggregator: Address = settings_client.get_aggregator_address();
         aggregator.require_auth();
 
@@ -195,35 +241,67 @@ impl IGateway for GatewayContract {
             .persistent()
             .get(&DataKey::Order(order_id.clone()))
             .ok_or(ContractError::OrderNotFound)?;
+
         if order.is_fulfilled {
             return Err(ContractError::OrderFulfilled);
         }
+
         if order.is_refunded {
             return Err(ContractError::OrderRefunded);
         }
+
         if fee > order.protocol_fee {
             return Err(ContractError::FeeExceedsProtocolFee);
         }
 
         let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
-        let wallet_contract: Address = env.storage().persistent().get(&DataKey::Wallet).unwrap();
+
         let treasury: Address = settings_client.get_treasury_address();
+
         let token_client = token::Client::new(&env, &usdc_asset);
 
         if fee > 0 {
-            token_client.transfer(&wallet_contract, &treasury, &fee);
+            token_client.transfer(&env.current_contract_address(), &treasury, &fee);
         }
-        let refund_amount = order.amount + order.sender_fee - fee;
-        token_client.transfer(&wallet_contract, &order.refund_address, &refund_amount);
+
+        let refund_amount = (order.amount + order.sender_fee) - fee;
+
+        token_client.transfer(
+            &env.current_contract_address(),
+            &order.refund_address,
+            &refund_amount,
+        );
 
         order.is_refunded = true;
+
         order.current_bps = 0;
+
+        order.amount = 0;
+
+        order.sender_fee = 0;
+
         env.storage()
             .persistent()
             .set(&DataKey::Order(order_id.clone()), &order);
 
         env.events().publish(("OrderRefunded", order_id), fee);
+
         Ok(())
+    }
+
+    fn get_token_balance(env: Env, user: Address) -> i128 {
+        let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+        let token_client = token::Client::new(&env, &usdc_asset);
+        token_client.balance(&user)
+    }
+    fn get_order_id(env: Env, order_id: Bytes) -> Result<Bytes, ContractError> {
+        let order: Order = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Order(order_id))
+            .ok_or(ContractError::OrderNotFound)?;
+
+        Ok(order.order_id)
     }
 
     fn get_order_info(env: Env, order_id: Bytes) -> Result<Order, ContractError> {
@@ -239,29 +317,22 @@ impl IGateway for GatewayContract {
             .persistent()
             .get(&DataKey::SettingsContract)
             .unwrap();
-        let settings_client = GatewaySettingManagerContractClient::new(&env, &settings_contract);
+        let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
         settings_client.get_fee_details()
     }
 }
 
 #[contractimpl]
-impl GatewayContract {
-    pub fn initialize(
-        env: Env,
-        admin: Address,
-        usdc_asset: Address,
-        wallet_contract: Address,
-        settings_contract: Address,
-    ) {
+impl LPContract {
+    pub fn initialize(env: Env, admin: Address, usdc_asset: Address, settings_contract: Address) {
         admin.require_auth();
+
         env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
-        env.storage()
-            .persistent()
-            .set(&DataKey::Wallet, &wallet_contract);
         env.storage()
             .persistent()
             .set(&DataKey::SettingsContract, &settings_contract);
     }
+
     pub fn register_lp_node(
         env: Env,
         lp_node_id: Bytes,

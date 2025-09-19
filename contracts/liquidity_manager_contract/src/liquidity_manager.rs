@@ -6,10 +6,10 @@ use crate::{
 };
 
 #[contract]
-pub struct GatewaySettingManagerContract;
+pub struct LPSettingManagerContract;
 
 #[contractimpl]
-impl GatewaySettingManagerContract {
+impl LPSettingManagerContract {
     pub fn initialize(env: Env, admin: Address) {
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Admin, &admin);

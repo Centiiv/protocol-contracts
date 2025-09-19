@@ -15,10 +15,11 @@ pub enum ContractError {
     FeeExceedsProtocolFee = 10,
     Paused = 11,
     Unauthorized = 12,
-    InvalidFeePercent = 13,
+    TransferFailed = 13,
     AddressAlreadySet = 14,
     InvalidParameter = 15,
     InvalidLpNodeParameters = 16,
     LpNodeIdAlreadyExists = 17,
-    NotFound = 18,
+    SettingsContractNotSet = 18,
+    UsdcNotSet = 19,
 }
