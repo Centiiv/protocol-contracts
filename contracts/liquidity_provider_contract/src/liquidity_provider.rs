@@ -4,7 +4,7 @@ use crate::{
     storage_types::{DataKey, LpNode, Order, OrderParams},
 };
 use liquidity_manager::{self, liquidity_manager::LPSettingManagerContractClient};
-use soroban_sdk::{contract, contractimpl, log, token, Address, Bytes, Env, Map};
+use soroban_sdk::{contract, contractimpl, log, token, Address, Bytes, BytesN, Env, Map};
 
 #[contract]
 pub struct LPContract;
@@ -170,7 +170,6 @@ impl IGateway for LPContract {
         let transfer_amount = liquidity_provider_amount - protocol_fee;
 
         if order.current_bps == 0 {
-            log!(&env, "Order fully fulfilled - setting is_fulfilled to true");
             order.is_fulfilled = true;
 
             if order.sender_fee > 0 {
@@ -294,6 +293,7 @@ impl IGateway for LPContract {
         let token_client = token::Client::new(&env, &usdc_asset);
         token_client.balance(&user)
     }
+
     fn get_order_id(env: Env, order_id: Bytes) -> Result<Bytes, ContractError> {
         let order: Order = env
             .storage()
@@ -311,7 +311,7 @@ impl IGateway for LPContract {
             .ok_or(ContractError::OrderNotFound)
     }
 
-    fn get_fee_details(env: Env) -> (i64, i64) {
+    fn get_lp_fee_details(env: Env) -> (i64, i64) {
         let settings_contract: Address = env
             .storage()
             .persistent()
@@ -324,7 +324,7 @@ impl IGateway for LPContract {
 
 #[contractimpl]
 impl LPContract {
-    pub fn initialize(env: Env, admin: Address, usdc_asset: Address, settings_contract: Address) {
+    pub fn init(env: Env, admin: Address, usdc_asset: Address, settings_contract: Address) {
         admin.require_auth();
 
         env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
@@ -361,5 +361,12 @@ impl LPContract {
             .publish(("LpNodeRegistered", lp_node_id), capacity);
 
         Ok(())
+    }
+
+    pub fn upgrade_lp(e: Env, new_wasm_hash: BytesN<32>) {
+        let admin: Address = e.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        e.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 }

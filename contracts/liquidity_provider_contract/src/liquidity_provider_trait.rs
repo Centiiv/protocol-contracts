@@ -1,4 +1,4 @@
-use soroban_sdk::{token, Address, Bytes, Env};
+use soroban_sdk::{Address, Bytes, Env};
 
 use crate::{
     error::ContractError,
@@ -6,9 +6,6 @@ use crate::{
 };
 
 pub trait IGateway {
-    //fn initialize(env: Env, admin: Address, usdc_asset: Address, settings_contract: Address);
-    //
-    //fn register_lp_node(env: Env, lp_node_id: Bytes, capacity: i128) -> Result<(), ContractError>;
     fn get_token_balance(env: Env, user: Address) -> i128;
     fn create_order(env: Env, order_params: OrderParams) -> Result<(), ContractError>;
 
@@ -26,5 +23,5 @@ pub trait IGateway {
 
     fn get_order_info(env: Env, order_id: Bytes) -> Result<Order, ContractError>;
 
-    fn get_fee_details(env: Env) -> (i64, i64);
+    fn get_lp_fee_details(env: Env) -> (i64, i64);
 }
