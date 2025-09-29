@@ -10,6 +10,11 @@ ld:
 lp_abi:
 	stellar contract bindings typescript --wasm build_output/liquidity_provider_contract.wasm --output-dir ./bindings/liquidity_provider
 
+li:
+	make -C contracts/liquidity_provider_contract interact
+
+lmc:
+	make -C contracts/liquidity_provider_contract create
 
 lm:
 	make -C contracts/liquidity_manager_contract debug
@@ -22,3 +27,8 @@ lmd:
 
 lm_abi:
 	stellar contract bindings typescript --wasm build_output/liquidity_manager.wasm --output-dir ./bindings/liquidity_manager
+
+
+lmi:
+	make -C contracts/liquidity_manager_contract interact
+ 

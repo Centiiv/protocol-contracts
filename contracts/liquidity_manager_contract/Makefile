@@ -42,4 +42,11 @@ deploy:
 	  -- \
 	  --admin $(ADMIN) \
 
-
+interact: 
+	stellar contract invoke \
+  --id CDRV7LZKX7BODJS7JBEFTTTNRZMOZ54FLLNMCCWAVW4DV6NL3PVPZMLY \
+  --source-account josh \
+  --network testnet \
+  -- \
+  initialize \
+  --admin $(ADMIN) \
