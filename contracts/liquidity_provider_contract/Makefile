@@ -36,6 +36,7 @@ SOURCE       = josh
 ADMIN        = GA3N5T6H7QL5RH66C3CVU6IRALPFCMKYX753OWJY6BOE3ESEXBOMV2KN
 USDC_ASSET   = CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA
 
+liquidity_provider_contract = CDRV7LZKX7BODJS7JBEFTTTNRZMOZ54FLLNMCCWAVW4DV6NL3PVPZMLY
 deploy:
 	stellar contract deploy \
 	  --wasm-hash $(WASM_HASH) \
@@ -45,3 +46,39 @@ deploy:
 	  --admin $(ADMIN) \
 	  --usdc_asset $(USDC_ASSET) \
 		--wallet_contract $(LM_CONTRACT_ADDRESS)
+
+interact: 
+	stellar contract invoke \
+  --id $(liquidity_provider_contract) \
+  --source-account josh \
+  --network testnet \
+  -- \
+  init \
+  --admin $(ADMIN) \
+  --usdc_asset $(USDC_ASSET) \
+  --settings_contract $(LM_CONTRACT_ADDRESS) 
+
+create: 
+	stellar contract invoke \
+  --id $(liquidity_provider_contract) \
+  --network $(NETWORK) \
+  --source-account josh \
+  -- \
+   create_order \
+	 --params '{"order_id":"746573742d6f72646572","token":"GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5","sender":"GA3N5T6H7QL5RH66C3CVU6IRALPFCMKYX753OWJY6BOE3ESEXBOMV2KN","amount":"10000000","rate":100,"sender_fee_recipient":"GCS7OUIKY4XUAQPT77HHSLLZ2JDMP53MCJ6HVIEY6ZF3B4ATFJDGJJS6","sender_fee":"5","refund_address":"GA3N5T6H7QL5RH66C3CVU6IRALPFCMKYX753OWJY6BOE3ESEXBOMV2KN","message_hash":"abcd1234"}'
+
+ stellar contract invoke \
+  --id CDRV7LZKX7BODJS7JBEFTTTNRZMOZ54FLLNMCCWAVW4DV6NL3PVPZMLY \
+	--source-account josh \
+  --network testnet \
+	-- \
+  get_lp_fee_details \
+
+ stellar contract invoke \
+  --id CDRV7LZKX7BODJS7JBEFTTTNRZMOZ54FLLNMCCWAVW4DV6NL3PVPZMLY \
+  --network testnet \
+  --source-account josh \
+  -- \
+  create_order \
+  --params "{\"sender\":\"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF\",\"order_id\":\"1234123412341234123412341234123412341234123412341234123412341234\",\"token\":\"CBIELTK6YBZJU5UP2WWQEUCYKLPU6AUNZ2BQ4WWFEIE3USCIHMXQDAMA\",\"amount\":\"10000000000\",\"sender_fee_recipient\":\"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF\",\"sender_fee\":\"100000000\",\"refund_address\":\"GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF\",\"message_hash\":\"hash123\"}"
+
