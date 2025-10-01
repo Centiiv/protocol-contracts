@@ -46,9 +46,7 @@ fn setup<'a>() -> SetupResult<'a> {
 
     let lp_settings_contract_id = env.register(LPSettingManagerContract, ());
     let lp_settings_client = LPSettingManagerContractClient::new(&env, &lp_settings_contract_id);
-    lp_settings_client.initialize(&admin);
-    lp_settings_client.update_protocol_address(&ProtocolAddressType::Treasury, &treasury);
-    lp_settings_client.update_protocol_address(&ProtocolAddressType::Aggregator, &aggregator);
+    lp_settings_client.initialize(&admin, &treasury, &aggregator);
 
     let lp_contract_id = env.register(LPContract, ());
     let lp_client = LPContractClient::new(&env, &lp_contract_id);
@@ -130,7 +128,6 @@ fn test_settle_full_order() {
 
     let order_id = Bytes::from_array(&setup_result.env, &[2u8; 32]);
 
-    let split_order_id = Bytes::from_array(&setup_result.env, &[3u8; 32]);
     let sender_fee_recipient = Address::generate(&setup_result.env);
     let rate = 9500_i64;
     let message_hash = String::from_str(&setup_result.env, "hash123");
@@ -158,7 +155,6 @@ fn test_settle_full_order() {
     setup_result.env.mock_all_auths();
 
     let result = setup_result.lp_client.try_settle(
-        &split_order_id,
         &order_id,
         &setup_result.addresses.lp_node,
         &settle_percent,
