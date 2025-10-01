@@ -20,7 +20,8 @@ pub enum ProtocolAddressType {
 pub enum DataKey {
     Admin,
     Treasury,
-    Aggregator,
+    Relayer,
+    //Aggregator,
     ProtocolFeePercent,
     MaxBps,
     Paused,

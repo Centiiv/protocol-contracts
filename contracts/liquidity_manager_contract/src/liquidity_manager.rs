@@ -10,7 +10,7 @@ pub struct LPSettingManagerContract;
 
 #[contractimpl]
 impl LPSettingManagerContract {
-    pub fn initialize(env: Env, admin: Address) {
+    pub fn initialize(env: Env, admin: Address, treasury: Address, relayer_address: Address) {
         admin.require_auth();
         env.storage().persistent().set(&DataKey::Admin, &admin);
         env.storage()
@@ -20,6 +20,13 @@ impl LPSettingManagerContract {
             .persistent()
             .set(&DataKey::MaxBps, &100_000_i64);
         env.storage().persistent().set(&DataKey::Paused, &false);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Treasury, &treasury);
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Relayer, &relayer_address);
     }
 
     pub fn update_protocol_fee(env: Env, protocol_fee_percent: i64) -> Result<(), ContractError> {
@@ -66,7 +73,7 @@ impl LPSettingManagerContract {
                 Self::update_address(&env, DataKey::Treasury, what, value)
             }
             ProtocolAddressType::Aggregator => {
-                Self::update_address(&env, DataKey::Aggregator, what, value)
+                Self::update_address(&env, DataKey::Relayer, what, value)
             }
         }
     }
@@ -105,11 +112,8 @@ impl LPSettingManagerContract {
         env.storage().persistent().get(&DataKey::Treasury).unwrap()
     }
 
-    pub fn get_aggregator_address(env: Env) -> Address {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Aggregator)
-            .unwrap()
+    pub fn get_relayer_address(env: Env) -> Address {
+        env.storage().persistent().get(&DataKey::Relayer).unwrap()
     }
 
     pub fn is_paused(env: Env) -> bool {

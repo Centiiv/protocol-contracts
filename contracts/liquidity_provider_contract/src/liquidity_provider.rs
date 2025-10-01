@@ -101,7 +101,6 @@ impl IGateway for LPContract {
 
     fn settle(
         env: Env,
-        split_order_id: Bytes,
         order_id: Bytes,
         liquidity_provider: Address,
         settle_percent: i128,
@@ -116,9 +115,9 @@ impl IGateway for LPContract {
 
         let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
 
-        let aggregator: Address = settings_client.get_aggregator_address();
+        let relayer: Address = settings_client.get_relayer_address();
 
-        aggregator.require_auth();
+        relayer.require_auth();
 
         if settle_percent <= 0 || settle_percent > 100_000 {
             return Err(ContractError::InvalidSettlePercent);
@@ -217,7 +216,7 @@ impl IGateway for LPContract {
             .set(&DataKey::Order(order_id.clone()), &order);
 
         env.events().publish(
-            ("OrderSettled", split_order_id, order_id, liquidity_provider),
+            ("OrderSettled", order_id, liquidity_provider),
             settle_percent,
         );
 
@@ -232,8 +231,8 @@ impl IGateway for LPContract {
             .unwrap();
         let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
 
-        let aggregator: Address = settings_client.get_aggregator_address();
-        aggregator.require_auth();
+        let relayer: Address = settings_client.get_relayer_address();
+        relayer.require_auth();
 
         let mut order: Order = env
             .storage()

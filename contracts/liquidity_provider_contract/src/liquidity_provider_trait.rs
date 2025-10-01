@@ -11,7 +11,6 @@ pub trait IGateway {
 
     fn settle(
         env: Env,
-        split_order_id: Bytes,
         order_id: Bytes,
         liquidity_provider: Address,
         settle_percent: i128,
