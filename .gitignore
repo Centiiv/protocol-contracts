@@ -1,6 +1,8 @@
 # Rust's output directory
 target
-
+**node_modules
+.env
+.env.example
 **test_snapshots
 # Local settings
 .soroban
