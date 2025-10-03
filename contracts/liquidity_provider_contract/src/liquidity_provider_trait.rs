@@ -7,6 +7,7 @@ use crate::{
 
 pub trait IGateway {
     fn get_token_balance(env: Env, user: Address) -> i128;
+
     fn create_order(env: Env, order_params: OrderParams) -> Result<(), ContractError>;
 
     fn settle(
