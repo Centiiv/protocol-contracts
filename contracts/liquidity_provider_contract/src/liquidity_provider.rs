@@ -1,10 +1,10 @@
 use crate::{
     error::ContractError,
     liquidity_provider_trait::IGateway,
-    storage_types::{DataKey, LpNode, Order, OrderParams},
+    storage_types::{DataKey, LpNode, Order, OrderParams, PendingRefund, PendingSettlement},
 };
 use liquidity_manager::{self, liquidity_manager::LPSettingManagerContractClient};
-use soroban_sdk::{contract, contractimpl, log, token, Address, Bytes, BytesN, Env, Map};
+use soroban_sdk::{contract, contractimpl, token, Address, Bytes, BytesN, Env, Map};
 
 #[contract]
 pub struct LPContract;
@@ -50,7 +50,7 @@ impl IGateway for LPContract {
 
         token_client.transfer(
             &params.sender,
-            &env.current_contract_address(),
+            &params.temporary_wallet_address,
             &(params.amount + params.sender_fee),
         );
 
@@ -60,6 +60,7 @@ impl IGateway for LPContract {
             token: usdc_asset,
             amount: params.amount,
             sender_fee_recipient: params.sender_fee_recipient,
+            temporary_wallet_address: params.temporary_wallet_address,
             sender_fee: params.sender_fee,
             protocol_fee,
             is_fulfilled: false,
@@ -105,18 +106,15 @@ impl IGateway for LPContract {
         liquidity_provider: Address,
         settle_percent: i128,
     ) -> Result<bool, ContractError> {
-        let settings_contract: Address =
-            match env.storage().persistent().get(&DataKey::SettingsContract) {
-                Some(addr) => addr,
-                None => {
-                    return Err(ContractError::SettingsContractNotSet);
-                }
-            };
+        let settings_contract: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::SettingsContract)
+            .unwrap();
 
         let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
 
         let relayer: Address = settings_client.get_relayer_address();
-
         relayer.require_auth();
 
         if settle_percent <= 0 || settle_percent > 100_000 {
@@ -142,74 +140,33 @@ impl IGateway for LPContract {
             return Err(ContractError::OrderRefunded);
         }
 
-        let usdc_asset: Address = match env.storage().persistent().get(&DataKey::Usdc) {
-            Some(addr) => addr,
-            None => {
-                return Err(ContractError::UsdcNotSet);
-            }
-        };
-
-        let treasury: Address = settings_client.get_treasury_address();
-
-        let token_client = token::Client::new(&env, &usdc_asset);
-
         let current_order_bps = order.current_bps;
-
         order.current_bps -= settle_percent;
 
         let liquidity_provider_amount = (order.amount * settle_percent) / current_order_bps;
-
         order.amount -= liquidity_provider_amount;
 
         let (protocol_fee_percent, max_bps) = settings_client.get_fee_details();
-
         let protocol_fee =
             (liquidity_provider_amount * protocol_fee_percent as i128) / (max_bps as i128);
-
         let transfer_amount = liquidity_provider_amount - protocol_fee;
 
         if order.current_bps == 0 {
             order.is_fulfilled = true;
-
-            if order.sender_fee > 0 {
-                match token_client.try_transfer(
-                    &env.current_contract_address(),
-                    &order.sender_fee_recipient,
-                    &order.sender_fee,
-                ) {
-                    Ok(_) => log!(&env, "Sender fee transferred successfully"),
-                    Err(_) => {
-                        return Err(ContractError::TransferFailed);
-                    }
-                }
-            }
         }
 
-        if protocol_fee > 0 {
-            match token_client.try_transfer(
-                &env.current_contract_address(),
-                &treasury,
-                &protocol_fee,
-            ) {
-                Ok(_) => log!(&env, "Protocol fee transferred successfully"),
-                Err(_) => {
-                    return Err(ContractError::TransferFailed);
-                }
-            }
-        }
+        let pending_settlement = PendingSettlement {
+            order_id: order_id.clone(),
+            protocol_fee,
+            transfer_amount,
+            liquidity_provider: liquidity_provider.clone(),
+            settle_percent,
+        };
 
-        if transfer_amount > 0 {
-            match token_client.try_transfer(
-                &env.current_contract_address(),
-                &liquidity_provider,
-                &transfer_amount,
-            ) {
-                Ok(_) => log!(&env, "Liquidity provider amount transferred successfully"),
-                Err(_) => {
-                    return Err(ContractError::TransferFailed);
-                }
-            }
-        }
+        env.storage().persistent().set(
+            &DataKey::PendingSettlement(order_id.clone()),
+            &pending_settlement,
+        );
 
         env.storage()
             .persistent()
@@ -221,6 +178,68 @@ impl IGateway for LPContract {
         );
 
         Ok(true)
+    }
+
+    fn execute_settlement_transfer(env: Env, order_id: Bytes) -> Result<(), ContractError> {
+        let order: Order = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Order(order_id.clone()))
+            .ok_or(ContractError::OrderNotFound)?;
+
+        order.temporary_wallet_address.require_auth();
+
+        let pending_settlement: PendingSettlement = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingSettlement(order_id.clone()))
+            .ok_or(ContractError::NoPendingSettlement)?;
+
+        let settings_contract: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::SettingsContract)
+            .unwrap();
+        let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
+
+        let treasury: Address = settings_client.get_treasury_address();
+        let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+        let token_client = token::Client::new(&env, &usdc_asset);
+
+        if pending_settlement.protocol_fee > 0 {
+            token_client.transfer(
+                &order.temporary_wallet_address,
+                &treasury,
+                &pending_settlement.protocol_fee,
+            );
+        }
+
+        if pending_settlement.transfer_amount > 0 {
+            token_client.transfer(
+                &order.temporary_wallet_address,
+                &pending_settlement.liquidity_provider,
+                &pending_settlement.transfer_amount,
+            );
+        }
+
+        if order.is_fulfilled && order.sender_fee > 0 {
+            token_client.transfer(
+                &order.temporary_wallet_address,
+                &order.sender_fee_recipient,
+                &order.sender_fee,
+            );
+        }
+
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PendingSettlement(order_id.clone()));
+
+        env.events().publish(
+            ("SettlementTransferred", order_id),
+            pending_settlement.settle_percent,
+        );
+
+        Ok(())
     }
 
     fn refund(env: Env, order_id: Bytes, fee: i128) -> Result<(), ContractError> {
@@ -252,30 +271,19 @@ impl IGateway for LPContract {
             return Err(ContractError::FeeExceedsProtocolFee);
         }
 
-        let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+        let pending_refund = PendingRefund {
+            order_id: order_id.clone(),
+            fee,
+            refund_amount: (order.amount + order.sender_fee) - fee,
+        };
 
-        let treasury: Address = settings_client.get_treasury_address();
-
-        let token_client = token::Client::new(&env, &usdc_asset);
-
-        if fee > 0 {
-            token_client.transfer(&env.current_contract_address(), &treasury, &fee);
-        }
-
-        let refund_amount = (order.amount + order.sender_fee) - fee;
-
-        token_client.transfer(
-            &env.current_contract_address(),
-            &order.refund_address,
-            &refund_amount,
-        );
+        env.storage()
+            .persistent()
+            .set(&DataKey::PendingRefund(order_id.clone()), &pending_refund);
 
         order.is_refunded = true;
-
         order.current_bps = 0;
-
         order.amount = 0;
-
         order.sender_fee = 0;
 
         env.storage()
@@ -283,6 +291,58 @@ impl IGateway for LPContract {
             .set(&DataKey::Order(order_id.clone()), &order);
 
         env.events().publish(("OrderRefunded", order_id), fee);
+
+        Ok(())
+    }
+
+    fn execute_refund_transfer(env: Env, order_id: Bytes) -> Result<(), ContractError> {
+        let order: Order = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Order(order_id.clone()))
+            .ok_or(ContractError::OrderNotFound)?;
+
+        order.temporary_wallet_address.require_auth();
+
+        let pending_refund: PendingRefund = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingRefund(order_id.clone()))
+            .ok_or(ContractError::NoPendingRefund)?;
+
+        let settings_contract: Address = env
+            .storage()
+            .persistent()
+            .get(&DataKey::SettingsContract)
+            .unwrap();
+        let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
+
+        let treasury: Address = settings_client.get_treasury_address();
+        let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+        let token_client = token::Client::new(&env, &usdc_asset);
+
+        if pending_refund.fee > 0 {
+            token_client.transfer(
+                &order.temporary_wallet_address,
+                &treasury,
+                &pending_refund.fee,
+            );
+        }
+
+        token_client.transfer(
+            &order.temporary_wallet_address,
+            &order.refund_address,
+            &pending_refund.refund_amount,
+        );
+
+        env.storage()
+            .persistent()
+            .remove(&DataKey::PendingRefund(order_id.clone()));
+
+        env.events().publish(
+            ("RefundTransferred", order_id),
+            pending_refund.refund_amount,
+        );
 
         Ok(())
     }
@@ -320,7 +380,6 @@ impl IGateway for LPContract {
         settings_client.get_fee_details()
     }
 }
-
 #[contractimpl]
 impl LPContract {
     pub fn init(env: Env, admin: Address, usdc_asset: Address, settings_contract: Address) {

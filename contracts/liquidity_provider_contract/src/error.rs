@@ -22,4 +22,6 @@ pub enum ContractError {
     LpNodeIdAlreadyExists = 17,
     SettingsContractNotSet = 18,
     UsdcNotSet = 19,
+    NoPendingSettlement = 20,
+    NoPendingRefund = 21,
 }
