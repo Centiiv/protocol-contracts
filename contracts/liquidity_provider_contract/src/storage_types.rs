@@ -45,6 +45,6 @@ pub struct Order {
     pub refund_address: Address,
     pub current_bps: i128,
     pub amount: i128,
-    pub rate: i64, // Add this
+    pub rate: i64,
     pub message_hash: String,
 }
