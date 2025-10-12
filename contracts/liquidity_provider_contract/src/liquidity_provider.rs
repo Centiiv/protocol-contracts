@@ -44,8 +44,11 @@ impl IGateway for LPContract {
         }
 
         let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+
         let token_client = token::Client::new(&env, &usdc_asset);
+
         let (protocol_fee_percent, max_bps) = settings_client.get_fee_details();
+
         let protocol_fee = (params.amount * protocol_fee_percent as i128) / max_bps as i128;
 
         token_client.transfer(
@@ -115,6 +118,7 @@ impl IGateway for LPContract {
         let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
 
         let relayer: Address = settings_client.get_relayer_address();
+
         relayer.require_auth();
 
         if settle_percent <= 0 || settle_percent > 100_000 {
@@ -141,14 +145,18 @@ impl IGateway for LPContract {
         }
 
         let current_order_bps = order.current_bps;
+
         order.current_bps -= settle_percent;
 
         let liquidity_provider_amount = (order.amount * settle_percent) / current_order_bps;
+
         order.amount -= liquidity_provider_amount;
 
         let (protocol_fee_percent, max_bps) = settings_client.get_fee_details();
+
         let protocol_fee =
             (liquidity_provider_amount * protocol_fee_percent as i128) / (max_bps as i128);
+
         let transfer_amount = liquidity_provider_amount - protocol_fee;
 
         if order.current_bps == 0 {
@@ -200,10 +208,13 @@ impl IGateway for LPContract {
             .persistent()
             .get(&DataKey::SettingsContract)
             .unwrap();
+
         let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
 
         let treasury: Address = settings_client.get_treasury_address();
+
         let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+
         let token_client = token::Client::new(&env, &usdc_asset);
 
         if pending_settlement.protocol_fee > 0 {
@@ -248,9 +259,11 @@ impl IGateway for LPContract {
             .persistent()
             .get(&DataKey::SettingsContract)
             .unwrap();
+
         let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
 
         let relayer: Address = settings_client.get_relayer_address();
+
         relayer.require_auth();
 
         let mut order: Order = env
@@ -318,7 +331,9 @@ impl IGateway for LPContract {
         let settings_client = LPSettingManagerContractClient::new(&env, &settings_contract);
 
         let treasury: Address = settings_client.get_treasury_address();
+
         let usdc_asset: Address = env.storage().persistent().get(&DataKey::Usdc).unwrap();
+
         let token_client = token::Client::new(&env, &usdc_asset);
 
         if pending_refund.fee > 0 {
