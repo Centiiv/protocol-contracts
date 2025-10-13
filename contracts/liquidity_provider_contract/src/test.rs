@@ -80,7 +80,6 @@ fn test_register_lp_node() {
 fn test_create_order() {
     let setup_result = setup();
     let order_id = Bytes::from_array(&setup_result.env, &[2u8; 32]);
-    let sender_fee_recipient = Address::generate(&setup_result.env);
     let amount = 100_0000000_i128;
     let sender_fee = 10_0000000_i128;
     let rate = 9500_i64;
@@ -97,8 +96,6 @@ fn test_create_order() {
         temporary_wallet_address: setup_result.addresses.temporary_wallet.clone(),
         amount,
         rate,
-        sender_fee_recipient: sender_fee_recipient.clone(),
-        sender_fee,
         refund_address: setup_result.addresses.refund_address.clone(),
         message_hash: message_hash.clone(),
     };
@@ -126,14 +123,13 @@ fn test_settle_full_order() {
     assert!(result.is_ok());
 
     let amount = 100_i128;
-    let sender_fee = 10_i128;
 
     setup_result
         .token_client
-        .mint(&setup_result.addresses.sender, &(amount + sender_fee));
+        .mint(&setup_result.addresses.sender, &amount);
 
     let order_id = Bytes::from_array(&setup_result.env, &[2u8; 32]);
-    let sender_fee_recipient = Address::generate(&setup_result.env);
+
     let rate = 9500_i64;
     let message_hash = String::from_str(&setup_result.env, "hash123");
     let settle_percent = 100_000_i128;
@@ -145,8 +141,6 @@ fn test_settle_full_order() {
         temporary_wallet_address: setup_result.addresses.temporary_wallet.clone(),
         amount,
         rate,
-        sender_fee_recipient: sender_fee_recipient.clone(),
-        sender_fee,
         refund_address: Address::generate(&setup_result.env),
         message_hash: message_hash.clone(),
     };
@@ -163,8 +157,7 @@ fn test_settle_full_order() {
         .lp_client
         .get_token_balance(&setup_result.addresses.temporary_wallet);
     assert_eq!(
-        temp_wallet_balance_after_create,
-        amount + sender_fee,
+        temp_wallet_balance_after_create, amount,
         "Temporary wallet should have all tokens after order creation"
     );
 
@@ -195,24 +188,11 @@ fn test_settle_full_order() {
         .lp_client
         .get_token_balance(&setup_result.addresses.lp_node);
 
-    let treasury_balance = setup_result
-        .lp_client
-        .get_token_balance(&Address::generate(&setup_result.env));
-
-    let sender_fee_balance = setup_result
-        .lp_client
-        .get_token_balance(&sender_fee_recipient);
-
     let temp_wallet_balance_after_settle = setup_result
         .lp_client
         .get_token_balance(&setup_result.addresses.temporary_wallet);
 
     assert_eq!(lp_balance, 99, "LP should receive 99 tokens");
-
-    assert_eq!(
-        sender_fee_balance, 10,
-        "Sender fee recipient should receive 10 tokens"
-    );
 
     assert_eq!(
         temp_wallet_balance_after_settle, 0,
@@ -229,14 +209,12 @@ fn test_refund_order() {
     assert!(result.is_ok());
 
     let amount = 100_i128;
-    let sender_fee = 10_i128;
 
     setup_result
         .token_client
-        .mint(&setup_result.addresses.sender, &(amount + sender_fee));
+        .mint(&setup_result.addresses.sender, &amount);
 
     let order_id = Bytes::from_array(&setup_result.env, &[4u8; 32]);
-    let sender_fee_recipient = Address::generate(&setup_result.env);
     let rate = 9500_i64;
     let message_hash = String::from_str(&setup_result.env, "hash123");
 
@@ -247,8 +225,6 @@ fn test_refund_order() {
         temporary_wallet_address: setup_result.addresses.temporary_wallet.clone(),
         amount,
         rate,
-        sender_fee_recipient: sender_fee_recipient.clone(),
-        sender_fee,
         refund_address: setup_result.addresses.refund_address.clone(),
         message_hash: message_hash.clone(),
     };
@@ -265,8 +241,7 @@ fn test_refund_order() {
         .lp_client
         .get_token_balance(&setup_result.addresses.temporary_wallet);
     assert_eq!(
-        temp_wallet_balance_after_create,
-        amount + sender_fee,
+        temp_wallet_balance_after_create, amount,
         "Temporary wallet should have all tokens after order creation"
     );
 
@@ -299,16 +274,13 @@ fn test_refund_order() {
     let refund_address_balance = setup_result
         .lp_client
         .get_token_balance(&setup_result.addresses.refund_address);
-    let treasury_balance = setup_result
-        .lp_client
-        .get_token_balance(&Address::generate(&setup_result.env));
     let temp_wallet_balance_after_refund = setup_result
         .lp_client
         .get_token_balance(&setup_result.addresses.temporary_wallet);
 
     assert_eq!(
-        refund_address_balance, 109,
-        "Refund address should have 109 tokens"
+        refund_address_balance, 99,
+        "Refund address should have 99 tokens (100 amount - 1 protocol fee)"
     );
     assert_eq!(
         temp_wallet_balance_after_refund, 0,

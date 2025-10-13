@@ -1,5 +1,5 @@
-use soroban_sdk::{contract, contractimpl, Address, Bytes, Env, IntoVal, Map, TryFromVal, Val};
 use soroban_sdk::{contracttype, String};
+use soroban_sdk::{Address, Bytes};
 #[contracttype]
 #[derive(Clone, Debug)]
 pub enum DataKey {
@@ -45,9 +45,7 @@ pub struct OrderParams {
     pub sender: Address,
     pub amount: i128,
     pub rate: i64,
-    pub sender_fee_recipient: Address,
     pub temporary_wallet_address: Address,
-    pub sender_fee: i128,
     pub refund_address: Address,
     pub message_hash: String,
 }
@@ -58,9 +56,7 @@ pub struct Order {
     pub order_id: Bytes,
     pub sender: Address,
     pub token: Address,
-    pub sender_fee_recipient: Address,
     pub temporary_wallet_address: Address,
-    pub sender_fee: i128,
     pub protocol_fee: i128,
     pub is_fulfilled: bool,
     pub is_refunded: bool,

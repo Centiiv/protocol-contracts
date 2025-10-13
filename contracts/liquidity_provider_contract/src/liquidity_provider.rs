@@ -54,7 +54,7 @@ impl IGateway for LPContract {
         token_client.transfer(
             &params.sender,
             &params.temporary_wallet_address,
-            &(params.amount + params.sender_fee),
+            &(params.amount),
         );
 
         let order = Order {
@@ -62,9 +62,7 @@ impl IGateway for LPContract {
             sender: params.sender.clone(),
             token: usdc_asset,
             amount: params.amount,
-            sender_fee_recipient: params.sender_fee_recipient,
             temporary_wallet_address: params.temporary_wallet_address,
-            sender_fee: params.sender_fee,
             protocol_fee,
             is_fulfilled: false,
             is_refunded: false,
@@ -233,14 +231,6 @@ impl IGateway for LPContract {
             );
         }
 
-        if order.is_fulfilled && order.sender_fee > 0 {
-            token_client.transfer(
-                &order.temporary_wallet_address,
-                &order.sender_fee_recipient,
-                &order.sender_fee,
-            );
-        }
-
         env.storage()
             .persistent()
             .remove(&DataKey::PendingSettlement(order_id.clone()));
@@ -287,7 +277,7 @@ impl IGateway for LPContract {
         let pending_refund = PendingRefund {
             order_id: order_id.clone(),
             fee,
-            refund_amount: (order.amount + order.sender_fee) - fee,
+            refund_amount: (order.amount) - fee,
         };
 
         env.storage()
@@ -297,7 +287,7 @@ impl IGateway for LPContract {
         order.is_refunded = true;
         order.current_bps = 0;
         order.amount = 0;
-        order.sender_fee = 0;
+        //order.sender_fee = 0;
 
         env.storage()
             .persistent()
