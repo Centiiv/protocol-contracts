@@ -7,6 +7,9 @@ lu:
 ld:
 	make -C contracts/liquidity_provider_contract deploy 
 
+lc:
+	make -C contracts/liquidity_provider_contract create 
+
 lp_abi:
 	stellar contract bindings typescript --wasm build_output/liquidity_provider_contract.wasm --output-dir ./bindings/liquidity_provider
 
