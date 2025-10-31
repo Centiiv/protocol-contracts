@@ -21,7 +21,6 @@ pub enum DataKey {
     Admin,
     Treasury,
     Relayer,
-    //Aggregator,
     ProtocolFeePercent,
     MaxBps,
     Paused,
