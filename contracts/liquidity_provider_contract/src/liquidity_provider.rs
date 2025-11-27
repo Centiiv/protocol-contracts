@@ -219,6 +219,10 @@ impl IGateway for LPContract {
 
         let mut order: Order = order_option.unwrap();
 
+        if order.current_bps == 0 {
+            return Err(ContractError::OrderFulfilled);
+        }
+
         // Prevent double-settlement and settlement of refunded orders
         if order.is_fulfilled {
             return Err(ContractError::OrderFulfilled);
