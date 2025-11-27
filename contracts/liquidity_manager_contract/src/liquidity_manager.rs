@@ -280,7 +280,7 @@ impl LPSettingManagerContract {
     /// - Maintains all existing settings and state
     /// - Only admin can perform upgrades
     pub fn upgrade_lp_manager(e: Env, new_wasm_hash: BytesN<32>) {
-        let admin: Address = e.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = e.storage().persistent().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
         e.deployer().update_current_contract_wasm(new_wasm_hash);
