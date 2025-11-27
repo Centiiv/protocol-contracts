@@ -43,9 +43,6 @@ impl LPSettingManagerContract {
     pub fn initialize(env: Env, admin: Address, treasury: Address, relayer_address: Address) {
         let storage = env.storage().persistent();
 
-        // ───────────────────────────────────────────────
-        // 1. Prevent re-initialization
-        // ───────────────────────────────────────────────
         if storage.get::<DataKey, Address>(&DataKey::Admin).is_some() {
             panic!("Contract already initialized");
         }

@@ -574,24 +574,14 @@ impl LPContract {
     pub fn init(env: Env, admin: Address, usdc_asset: Address, settings_contract: Address) {
         let storage = env.storage().persistent();
 
-        // ───────────────────────────────────────────────
-        // 1. Prevent re-initialization
-        // ───────────────────────────────────────────────
         if storage.get::<DataKey, Address>(&DataKey::Admin).is_some() {
             panic!("Contract already initialized");
         }
 
-        // ───────────────────────────────────────────────
-        // 2. Authenticate the *caller* supplied as admin
-        // ───────────────────────────────────────────────
         admin.require_auth();
 
-        // ───────────────────────────────────────────────
-        // 3. Persist the admin address
-        // ───────────────────────────────────────────────
         storage.set(&DataKey::Admin, &admin);
 
-        // Store config values
         storage.set(&DataKey::Usdc, &usdc_asset);
         storage.set(&DataKey::SettingsContract, &settings_contract);
     }
