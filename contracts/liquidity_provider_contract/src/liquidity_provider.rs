@@ -568,12 +568,28 @@ impl LPContract {
     /// - `usdc_asset`: Address of the USDC token contract
     /// - `settings_contract`: Address of the settings manager contract
     pub fn init(env: Env, admin: Address, usdc_asset: Address, settings_contract: Address) {
+        let storage = env.storage().persistent();
+
+        // ───────────────────────────────────────────────
+        // 1. Prevent re-initialization
+        // ───────────────────────────────────────────────
+        if storage.get::<DataKey, Address>(&DataKey::Admin).is_some() {
+            panic!("Contract already initialized");
+        }
+
+        // ───────────────────────────────────────────────
+        // 2. Authenticate the *caller* supplied as admin
+        // ───────────────────────────────────────────────
         admin.require_auth();
 
-        env.storage().persistent().set(&DataKey::Usdc, &usdc_asset);
-        env.storage()
-            .persistent()
-            .set(&DataKey::SettingsContract, &settings_contract);
+        // ───────────────────────────────────────────────
+        // 3. Persist the admin address
+        // ───────────────────────────────────────────────
+        storage.set(&DataKey::Admin, &admin);
+
+        // Store config values
+        storage.set(&DataKey::Usdc, &usdc_asset);
+        storage.set(&DataKey::SettingsContract, &settings_contract);
     }
 
     /// # Register a new Liquidity Provider Node
@@ -629,7 +645,7 @@ impl LPContract {
     /// - Only admin can upgrade the contract
     /// - Ensures contract upgradeability while maintaining state
     pub fn upgrade_lp(e: Env, new_wasm_hash: BytesN<32>) {
-        let admin: Address = e.storage().instance().get(&DataKey::Admin).unwrap();
+        let admin: Address = e.storage().persistent().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
         e.deployer().update_current_contract_wasm(new_wasm_hash);

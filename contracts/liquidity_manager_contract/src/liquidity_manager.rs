@@ -41,6 +41,15 @@ impl LPSettingManagerContract {
     /// - `treasury`: Address to receive protocol fees
     /// - `relayer_address`: Authorized address for settlement operations
     pub fn initialize(env: Env, admin: Address, treasury: Address, relayer_address: Address) {
+        let storage = env.storage().persistent();
+
+        // ───────────────────────────────────────────────
+        // 1. Prevent re-initialization
+        // ───────────────────────────────────────────────
+        if storage.get::<DataKey, Address>(&DataKey::Admin).is_some() {
+            panic!("Contract already initialized");
+        }
+
         admin.require_auth();
 
         env.storage().persistent().set(&DataKey::Admin, &admin);
