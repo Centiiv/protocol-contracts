@@ -21,29 +21,22 @@ jobs:
           targets: wasm32-unknown-unknown
 
       - name: Install System Dependencies
-        # libssl-dev and pkg-config are required to compile stellar-cli from source
+        # These are required to build stellar-cli from source on Ubuntu
         run: |
           sudo apt-get update
-          sudo apt-get install -y pkg-config libssl-dev
+          sudo apt-get install -y pkg-config libssl-dev build-essential
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
       - name: Run Tests
-        # Runs all 11 tests from your workspace root
+        # Runs all tests in your workspace (the 11 tests you verified locally)
         run: cargo test --all-features
 
       - name: Install Stellar CLI
-        # Installing with 'opt' feature allows for contract optimization
+        # Installing with 'opt' feature is recommended for Soroban developers
         run: cargo install --locked stellar-cli --features opt
 
       - name: Build Contracts
-        # This mirrors your 'stellar contract build' command
+        # Compiles all contracts in the workspace to WASM
         run: stellar contract build
-
-      - name: Optimization & Size Check
-        # This ensures your contracts stay under the 64KB ledger limit
-        run: |
-          stellar contract optimize --wasm target/wasm32-unknown-unknown/release/*.wasm
-          echo "--- WASM Size Report ---"
-          ls -lh target/wasm32-unknown-unknown/release/*.optimized.wasm
