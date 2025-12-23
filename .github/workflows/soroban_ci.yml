@@ -2,7 +2,7 @@ name: Soroban CI
 
 on:
   push:
-    branches: ["main", "development,new_impl"]
+    branches: ["main", "development", "new_impl"]
   pull_request:
     branches: ["main"]
 
