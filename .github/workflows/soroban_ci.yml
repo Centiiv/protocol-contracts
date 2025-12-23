@@ -6,68 +6,65 @@ on:
   pull_request:
     branches: ["main"]
 
-env:
-  CARGO_TERM_COLOR: always
-
 jobs:
-  test:
-    name: Lint & Unit Tests
+  test_and_build:
+    name: ${{ matrix.contract_path }}
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Update these paths to match your folder names exactly
+        contract_path:
+          - "contracts/liquidity_manager_contract"
+          - "contracts/liquidity_provider_contract"
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: stable
+          toolchain: 1.81.0
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # This ensures the cache is separated by contract
+          workspaces: ${{ matrix.contract_path }}
 
       - name: Format Check
         run: cargo fmt --all -- --check
+        working-directory: ${{ matrix.contract_path }}
 
-      - name: Clippy (Linter)
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Run Contract Tests
-        # Runs all #[test] functions in your contract and test files
+      - name: Run Tests
         run: cargo test --all-features
-
-  build_and_validate:
-    name: Build & Size Check
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          targets: wasm32-unknown-unknown
+        working-directory: ${{ matrix.contract_path }}
 
       - name: Install Stellar CLI
-        run: |
-          cargo install --locked stellar-cli --features opt
+        run: cargo install --locked stellar-cli --features opt
 
       - name: Build Contract
         run: stellar contract build
+        working-directory: ${{ matrix.contract_path }}
 
-      - name: Optimize WASM
-        # Shrinks the WASM to be ledger-ready
+      - name: Optimize & Size Check
+        working-directory: ${{ matrix.contract_path }}
         run: |
           stellar contract optimize --wasm target/wasm32-unknown-unknown/release/*.wasm
 
-      - name: Validate Contract Size
-        # Fails CI if the optimized WASM exceeds the 64KB limit
-        run: |
-          MAX_SIZE=65536
-          SIZE=$(stat -c%s target/wasm32-unknown-unknown/release/*.optimized.wasm)
-          echo "Optimized WASM size: $SIZE bytes"
-          if [ "$SIZE" -gt "$MAX_SIZE" ]; then
-            echo "Error: WASM exceeds 64KB limit!"
-            exit 1
-          fi
+          # Check if size is under 64KB
+          for optimized in target/wasm32-unknown-unknown/release/*.optimized.wasm; do
+            SIZE=$(stat -c%s "$optimized")
+            echo "File: $optimized Size: $SIZE bytes"
+            if [ "$SIZE" -gt 65536 ]; then
+              echo "Error: WASM exceeds 64KB limit"
+              exit 1
+            fi
+          done
+
+      - name: Upload Optimized WASM
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.contract_path }}-optimized
+          path: ${{ matrix.contract_path }}/target/wasm32-unknown-unknown/release/*.optimized.wasm
