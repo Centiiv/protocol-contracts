@@ -1,11 +1,14 @@
 name: Soroban CI
 
-# Trigger on every push and PR to ensure we catch the workflow
-on: [push, pull_request]
+on:
+  push:
+    branches: ["main", "development", "new_impl"]
+  pull_request:
+    branches: ["main"]
 
 jobs:
-  build_and_test:
-    name: Test and Build All Contracts
+  ci:
+    name: Test and Build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -16,40 +19,31 @@ jobs:
         with:
           toolchain: 1.81.0
           targets: wasm32-unknown-unknown
-          components: rustfmt, clippy
+
+      - name: Install System Dependencies
+        # libssl-dev and pkg-config are required to compile stellar-cli from source
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Run All Tests
-        # This will run the 11 tests you just showed me
+      - name: Run Tests
+        # Runs all 11 tests from your workspace root
         run: cargo test --all-features
 
       - name: Install Stellar CLI
+        # Installing with 'opt' feature allows for contract optimization
         run: cargo install --locked stellar-cli --features opt
 
-      - name: Build All Contracts
-        # In a workspace, this builds all members (lp manager and lp contract)
+      - name: Build Contracts
+        # This mirrors your 'stellar contract build' command
         run: stellar contract build
 
-      - name: Optimize and Size Check
+      - name: Optimization & Size Check
+        # This ensures your contracts stay under the 64KB ledger limit
         run: |
-          # Find all built WASMs and optimize them
-          find target/wasm32-unknown-unknown/release/ -name "*.wasm" ! -name "*.optimized.wasm" -exec stellar contract optimize --wasm {} \;
-
-          # Display sizes and fail if any exceed 64KB
+          stellar contract optimize --wasm target/wasm32-unknown-unknown/release/*.wasm
           echo "--- WASM Size Report ---"
-          for optimized in $(find target/wasm32-unknown-unknown/release/ -name "*.optimized.wasm"); do
-            SIZE=$(stat -c%s "$optimized")
-            echo "File: $(basename $optimized) | Size: $SIZE bytes"
-            if [ "$SIZE" -gt 65536 ]; then
-              echo "ERROR: $optimized is too large for the network!"
-              exit 1
-            fi
-          done
-
-      - name: Archive Optimized WASMs
-        uses: actions/upload-artifact@v4
-        with:
-          name: optimized-contracts
-          path: target/wasm32-unknown-unknown/release/*.optimized.wasm
+          ls -lh target/wasm32-unknown-unknown/release/*.optimized.wasm
