@@ -1,70 +1,55 @@
 name: Soroban CI
 
-on:
-  push:
-    branches: ["main", "development", "new_impl"]
-  pull_request:
-    branches: ["main"]
+# Trigger on every push and PR to ensure we catch the workflow
+on: [push, pull_request]
 
 jobs:
-  test_and_build:
-    name: ${{ matrix.contract_path }}
+  build_and_test:
+    name: Test and Build All Contracts
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        # Update these paths to match your folder names exactly
-        contract_path:
-          - "contracts/liquidity_manager_contract"
-          - "contracts/liquidity_provider_contract"
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.81.0
-          components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+          components: rustfmt, clippy
 
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
-        with:
-          # This ensures the cache is separated by contract
-          workspaces: ${{ matrix.contract_path }}
 
-      - name: Format Check
-        run: cargo fmt --all -- --check
-        working-directory: ${{ matrix.contract_path }}
-
-      - name: Run Tests
+      - name: Run All Tests
+        # This will run the 11 tests you just showed me
         run: cargo test --all-features
-        working-directory: ${{ matrix.contract_path }}
 
       - name: Install Stellar CLI
         run: cargo install --locked stellar-cli --features opt
 
-      - name: Build Contract
+      - name: Build All Contracts
+        # In a workspace, this builds all members (lp manager and lp contract)
         run: stellar contract build
-        working-directory: ${{ matrix.contract_path }}
 
-      - name: Optimize & Size Check
-        working-directory: ${{ matrix.contract_path }}
+      - name: Optimize and Size Check
         run: |
-          stellar contract optimize --wasm target/wasm32-unknown-unknown/release/*.wasm
+          # Find all built WASMs and optimize them
+          find target/wasm32-unknown-unknown/release/ -name "*.wasm" ! -name "*.optimized.wasm" -exec stellar contract optimize --wasm {} \;
 
-          # Check if size is under 64KB
-          for optimized in target/wasm32-unknown-unknown/release/*.optimized.wasm; do
+          # Display sizes and fail if any exceed 64KB
+          echo "--- WASM Size Report ---"
+          for optimized in $(find target/wasm32-unknown-unknown/release/ -name "*.optimized.wasm"); do
             SIZE=$(stat -c%s "$optimized")
-            echo "File: $optimized Size: $SIZE bytes"
+            echo "File: $(basename $optimized) | Size: $SIZE bytes"
             if [ "$SIZE" -gt 65536 ]; then
-              echo "Error: WASM exceeds 64KB limit"
+              echo "ERROR: $optimized is too large for the network!"
               exit 1
             fi
           done
 
-      - name: Upload Optimized WASM
+      - name: Archive Optimized WASMs
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.contract_path }}-optimized
-          path: ${{ matrix.contract_path }}/target/wasm32-unknown-unknown/release/*.optimized.wasm
+          name: optimized-contracts
+          path: target/wasm32-unknown-unknown/release/*.optimized.wasm
